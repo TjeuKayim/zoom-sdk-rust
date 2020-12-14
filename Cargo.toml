@@ -1,0 +1,17 @@
+[package]
+name = "zoom-sdk"
+version = "0.1.0"
+authors = ["Tjeu Kayim <15987676+TjeuKayim@users.noreply.github.com>"]
+edition = "2018"
+license = "MIT"
+description = "Rust bindings to Zoom Windows SDK"
+repository = "https://github.com/TjeuKayim/zoom-sdk-rust"
+documentation = "http://docs.rs/zoom-sdk/"
+readme = "README.md"
+categories = ["api-bindings"]
+keywords = ["zoom", "video", "conferencing"]
+
+[workspace]
+members = ["zoom-sdk-windows-sys"]
+
+[dependencies]
