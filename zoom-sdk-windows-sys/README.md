@@ -7,4 +7,6 @@ FFI bindings to [Zoom Windows Software Development Kit](https://github.com/zoom/
 
 TODO: Build script
 
+Add DLL location to PATH.
+
 <https://github.com/zoom/zoom-sdk-windows/archive/v5.2.42037.1112.zip>
