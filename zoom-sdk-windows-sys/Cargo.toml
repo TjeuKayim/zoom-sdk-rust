@@ -12,3 +12,6 @@ categories = ["external-ffi-bindings"]
 keywords = ["zoom", "video", "conferencing"]
 
 [dependencies]
+
+[build-dependencies]
+bindgen = "0.56.0"
