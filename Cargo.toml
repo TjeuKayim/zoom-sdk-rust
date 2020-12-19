@@ -15,3 +15,6 @@ keywords = ["zoom", "video", "conferencing"]
 members = ["zoom-sdk-windows-sys"]
 
 [dependencies]
+
+[dependencies.zoom-sdk-windows-sys]
+path = "zoom-sdk-windows-sys"
