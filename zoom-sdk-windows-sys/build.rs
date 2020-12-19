@@ -2,11 +2,12 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rustc-link-search=./bin/lib");
-    println!("cargo:rustc-link-lib=sdk.lib");
-    println!("cargo:rustc-link-lib=user32.lib");
-    println!("cargo:rustc-link-lib=msvcrt.lib");
-    println!("cargo:rustc-link-lib=msvcprt.lib");
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    println!("cargo:rustc-link-search={}\\bin\\lib\\", manifest_dir);
+    println!("cargo:rustc-link-lib=static=sdk");
+    // println!("cargo:rustc-link-lib=user32.lib");
+    // println!("cargo:rustc-link-lib=msvcrt.lib");
+    // println!("cargo:rustc-link-lib=msvcprt.lib");
 
     println!("cargo:rerun-if-changed=wrapper.hpp");
 
@@ -25,6 +26,7 @@ fn main() {
         // .enable_cxx_namespaces()
         .opaque_type("_IMAGE_TLS_DIRECTORY64")
         // 128-bit integers don't currently have a known stable ABI
+        .opaque_type("CONTEXT")
         .opaque_type("_CONTEXT")
         .opaque_type("_DISPATCHER_CONTEXT")
         .opaque_type("PCONTEXT")
