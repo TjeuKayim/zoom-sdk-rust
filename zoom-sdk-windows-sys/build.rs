@@ -2,7 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let sdk_dir = env::var("ZOOM_SDK_DIR").unwrap();
+    let sdk_dir = env::var("ZOOM_SDK_DIR").expect("Environment variable ZOOM_SDK_DIR not set");
     println!("cargo:rustc-link-search={}\\lib\\", sdk_dir);
     println!("cargo:rustc-link-lib=static=sdk");
     println!("cargo:rerun-if-changed=wrapper.hpp");
