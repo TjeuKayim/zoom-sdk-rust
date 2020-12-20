@@ -15,6 +15,7 @@ keywords = ["zoom", "video", "conferencing"]
 members = ["zoom-sdk-windows-sys"]
 
 [dependencies]
+winapi = { version = "0.3.9", features = [] }
 
 [dependencies.zoom-sdk-windows-sys]
 path = "zoom-sdk-windows-sys"
