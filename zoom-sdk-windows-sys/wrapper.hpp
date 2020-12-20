@@ -33,3 +33,6 @@
 #include <customized_ui/customized_share_render.h>
 #include <customized_ui/customized_annotation.h>
 #include <customized_ui/customized_local_recording.h>
+
+// Virtual Method Wrappers
+#include "glue.hpp"

@@ -1,4 +1,4 @@
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsString;
 use std::os::windows::prelude::*;
 use std::{mem, ptr};
 use winapi::um::libloaderapi::GetModuleHandleA;
@@ -34,9 +34,9 @@ pub fn init() {
             rawdataOpts: mem::zeroed(),
         };
         let err = ffi::ZOOMSDK_InitSDK(&mut param);
-        assert!(err == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-        let err = ffi::ZOOMSDK_CleanUPSDK();
-        assert!(err == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
+        assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
+        // let err = ffi::ZOOMSDK_CleanUPSDK();
+        // assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
     }
 }
 
@@ -66,5 +66,40 @@ mod tests {
     #[test]
     fn zoom_init() {
         init();
+    }
+
+    #[test]
+    fn zoom_init_err() {
+        unsafe {
+            init();
+            // let mut param = mem::zeroed();
+            // let err = ffi::ZOOMSDK_InitSDK(&mut param);
+            let mut auth_service = ptr::null_mut();
+            let err = ffi::ZOOMSDK_CreateAuthService(&mut auth_service);
+            assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
+            let event = ffi::ZOOMSDK_AuthServiceEvent_New(Some(on_authentication_return));
+            assert!(!event.is_null());
+            let err = ffi::ZOOMSDK_IAuthService_SetEvent(auth_service, event);
+            assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
+            let app_key = str_to_u16_vec("abc");
+            let param = ffi::ZOOMSDK_AuthParam {
+                appKey: &app_key[0],
+                appSecret: &app_key[0],
+            };
+            let err = ffi::ZOOMSDK_IAuthService_SDKAuthParam(auth_service, param);
+            dbg!(err);
+            let err_type = ffi::ZOOMSDK_GetZoomLastError();
+            dbg!(err_type);
+            if !err_type.is_null() {
+                dbg!(ffi::ZOOMSDK_IZoomLastError_GetErrorType(err_type));
+                dbg!(ffi::ZOOMSDK_IZoomLastError_GetErrorCode(err_type));
+                dbg!(u16_ptr_to_string(
+                    ffi::ZOOMSDK_IZoomLastError_GetErrorDescription(err_type)
+                ));
+            }
+        }
+        unsafe extern "C" fn on_authentication_return(res: ffi::ZOOMSDK_AuthResult) {
+            dbg!(res);
+        }
     }
 }

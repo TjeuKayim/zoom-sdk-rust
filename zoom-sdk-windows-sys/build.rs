@@ -2,10 +2,20 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let sdk_dir = env::var("ZOOM_SDK_DIR").expect("Environment variable ZOOM_SDK_DIR not set");
+    let env_var = "ZOOM_SDK_DIR";
+    let sdk_dir = env::var(env_var).expect("Environment variable ZOOM_SDK_DIR not set");
+    println!("cargo:rerun-if-env-changed={}", env_var);
     println!("cargo:rustc-link-search={}\\lib\\", sdk_dir);
     println!("cargo:rustc-link-lib=static=sdk");
     println!("cargo:rerun-if-changed=wrapper.hpp");
+    println!("cargo:rerun-if-changed=glue.hpp");
+    println!("cargo:rerun-if-changed=glue.cpp");
+
+    cc::Build::new()
+        .cpp(true)
+        .include(&format!("{}\\h", sdk_dir))
+        .file("glue.cpp")
+        .compile("wrap.a");
 
     let bindings = bindgen::Builder::default()
         .clang_arg("-x")
