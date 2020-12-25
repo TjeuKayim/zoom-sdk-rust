@@ -3,7 +3,7 @@
 //! The Zoom C++ API [must be called](https://devforum.zoom.us/t/list-of-active-audio-users-not-received-in-callback/1397/9)
 //! from the single thread that runs the Windows message loop.
 
-use std::ffi::OsString;
+use std::ffi::{c_void, OsString};
 use std::os::windows::prelude::*;
 use std::{mem, ptr};
 use winapi::um::libloaderapi::GetModuleHandleA;
@@ -24,9 +24,9 @@ pub fn init() {
         let web_domain = str_to_u16_vec("https://zoom.us");
         let support_url = str_to_u16_vec("https://zoom.us");
         let mut param = ffi::ZOOMSDK_InitParam_Default();
-        param.strWebDomain = &web_domain[0];
+        param.strWebDomain = web_domain.as_ptr();
         param.strBrandingName = ptr::null();
-        param.strSupportUrl = &support_url[0];
+        param.strSupportUrl = support_url.as_ptr();
         param.hResInstance = GetModuleHandleA(ptr::null()) as _;
         // param.uiWindowIconSmallID = 0;
         // param.uiWindowIconBigID = 0;
@@ -65,14 +65,17 @@ unsafe fn str_to_u16_vec(s: &str) -> Vec<u16> {
 }
 
 static mut ON_AUTH: bool = false;
+static mut AUTH_SERVICE: *mut ffi::ZOOMSDK_IAuthService = ptr::null_mut();
 
 unsafe fn try_auth() -> i32 {
-    let mut auth_service = ptr::null_mut();
-    let err = ffi::ZOOMSDK_CreateAuthService(&mut auth_service);
+    let err = ffi::ZOOMSDK_CreateAuthService(&mut AUTH_SERVICE);
     assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-    let event = ffi::ZOOMSDK_AuthServiceEvent_New(Some(on_authentication_return));
-    assert!(!event.is_null());
-    let err = ffi::ZOOMSDK_IAuthService_SetEvent(auth_service, event);
+    let callback_data = Box::into_raw(Box::new(144));
+    let event = ffi::ZOOMSDK_AuthServiceEvent {
+        callbackData: callback_data as _,
+        authenticationReturn: Some(on_authentication_return),
+    };
+    let err = ffi::ZOOMSDK_IAuthService_SetEvent(AUTH_SERVICE, &event);
     assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
     let app_key: Vec<u16> = std::env::var_os("ZOOM_SDK_KEY")
         .unwrap()
@@ -88,14 +91,34 @@ unsafe fn try_auth() -> i32 {
         appKey: &app_key[0],
         appSecret: &app_secret[0],
     };
-    return ffi::ZOOMSDK_IAuthService_SDKAuthParam(auth_service, param);
+    let err = ffi::ZOOMSDK_IAuthService_SDKAuthParam(AUTH_SERVICE, param);
+    err
 }
 
-unsafe extern "C" fn on_authentication_return(res: ffi::ZOOMSDK_AuthResult) {
-    dbg!(res);
+unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
+    let data = data as *mut i32;
+    dbg!(*data, res);
     ON_AUTH = true;
     if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
-        // let meeting_service = ffi::ZOOMSDK_CreateMeetingService();
+        let mut meeting_service = ptr::null_mut();
+        let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
+        dbg!(err);
+
+        // Login
+        let username = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_USER").unwrap());
+        let password = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_PASS").unwrap());
+        let param = ffi::ZOOMSDK_LoginParam {
+            loginType: ffi::ZOOMSDK_LoginType_LoginType_Email,
+            ut: ffi::ZOOMSDK_tagLoginParam__bindgen_ty_1 {
+                emailLogin: ffi::ZOOMSDK_tagLoginParam4Email {
+                    bRememberMe: true,
+                    userName: username.as_ptr(),
+                    password: password.as_ptr(),
+                },
+            },
+        };
+        let err = ffi::ZOOMSDK_IAuthService_Login(AUTH_SERVICE, param);
+        dbg!(err);
     }
 }
 
