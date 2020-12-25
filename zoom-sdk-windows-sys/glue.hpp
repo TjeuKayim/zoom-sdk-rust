@@ -11,4 +11,5 @@ namespace ZOOM_SDK_NAMESPACE
     extern "C" IAuthServiceEvent* AuthServiceEvent_New(void (*authenticationReturn)(AuthResult));
     extern "C" SDKError IAuthService_SetEvent(IAuthService* self, IAuthServiceEvent* event);
     extern "C" SDKError IAuthService_SDKAuthParam(IAuthService* self, AuthParam param);
+    extern "C" InitParam InitParam_Default();
 }
