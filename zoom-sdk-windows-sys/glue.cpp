@@ -15,15 +15,21 @@ const wchar_t *ZOOM_SDK_NAMESPACE::IZoomLastError_GetErrorDescription(const IZoo
     return self->GetErrorDescription();
 }
 
-class WrapAuthServiceEvent : public IAuthServiceEvent {
+void StringDrop(wchar_t *string) {
+    delete string;
+}
+
+class AuthServiceEvent : public IAuthServiceEvent {
 public:
-    AuthServiceEvent event;
+    CAuthServiceEvent event;
 
     void onAuthenticationReturn(AuthResult ret) {
         event.authenticationReturn(event.callbackData, ret);
     }
 
-    void onLoginRet(LOGINSTATUS ret, IAccountInfo *pAccountInfo) {}
+    void onLoginRet(LOGINSTATUS ret, IAccountInfo *pAccountInfo) {
+        event.loginReturn(event.callbackData, ret, pAccountInfo);
+    }
 
     void onLogout() {}
 
@@ -32,11 +38,11 @@ public:
     void onZoomAuthIdentityExpired() {}
 };
 
-SDKError ZOOM_SDK_NAMESPACE::IAuthService_SetEvent(IAuthService *self, const AuthServiceEvent *event) {
-    if (!event->authenticationReturn) {
+SDKError ZOOM_SDK_NAMESPACE::IAuthService_SetEvent(IAuthService *self, const CAuthServiceEvent *event) {
+    if (!event->authenticationReturn || !event->loginReturn) {
         return SDKERR_INVALID_PARAMETER;
     }
-    auto wrap = new WrapAuthServiceEvent; // TODO: free memory
+    auto wrap = new AuthServiceEvent; // TODO: free memory
     wrap->event = *event;
     return self->SetEvent(wrap);
 }
@@ -52,4 +58,14 @@ SDKError ZOOM_SDK_NAMESPACE::IAuthService_Login(IAuthService *self, LoginParam p
 InitParam ZOOM_SDK_NAMESPACE::InitParam_Default() {
     InitParam initParam;
     return initParam;
+}
+
+const wchar_t* IAccountInfo_GetDisplayName(IAccountInfo *self) {
+    return self->GetDisplayName();
+}
+LoginType IAccountInfo_GetLoginType(IAccountInfo *self) {
+    return self->GetLoginType();
+}
+void IAccountInfo_Drop(IAccountInfo *self) {
+    delete self;
 }

@@ -6,19 +6,24 @@
 
 namespace ZOOM_SDK_NAMESPACE {
     extern "C" {
+    InitParam InitParam_Default();
     LastErrorType IZoomLastError_GetErrorType(const IZoomLastError *self);
     UINT64 IZoomLastError_GetErrorCode(const IZoomLastError *self);
     const wchar_t *IZoomLastError_GetErrorDescription(const IZoomLastError *self);
-    const size_t IAuthServiceEvent_SIZE = sizeof(IAuthServiceEvent);
+    void StringDrop(wchar_t *string);
 
-    struct AuthServiceEvent {
+    struct CAuthServiceEvent {
         void *callbackData;
 
         void (*authenticationReturn)(void *, AuthResult);
+        void (*loginReturn)(void *, LOGINSTATUS, IAccountInfo*);
     };
-    SDKError IAuthService_SetEvent(IAuthService *self, const AuthServiceEvent *event);
+    SDKError IAuthService_SetEvent(IAuthService *self, const CAuthServiceEvent *event);
     SDKError IAuthService_SDKAuthParam(IAuthService *self, AuthParam param);
     SDKError IAuthService_Login(IAuthService *self, LoginParam param);
-    InitParam InitParam_Default();
+
+    const wchar_t* IAccountInfo_GetDisplayName(IAccountInfo *self);
+    LoginType IAccountInfo_GetLoginType(IAccountInfo *self);
+    void IAccountInfo_Drop(IAccountInfo *self);
     }
 }
