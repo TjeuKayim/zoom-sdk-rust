@@ -66,6 +66,9 @@ unsafe fn cleanup() {
 }
 
 unsafe fn u16_ptr_to_string(ptr: *const u16) -> OsString {
+    if ptr.is_null() {
+        return OsString::new();
+    }
     let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
     let slice = std::slice::from_raw_parts(ptr, len);
     OsString::from_wide(slice)
@@ -151,7 +154,9 @@ unsafe extern "C" fn on_login_return(
     dbg!(ret);
     if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
         invoke_init_status_callback("Logged in");
-        // let display_name = ffi::GetDisplayName
+        let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
+        dbg!(u16_ptr_to_string(display_name));
+        // ffi::ZOOMSDK_IAccountInfo_Drop(info); Should not be dropped apparently
     }
 }
 

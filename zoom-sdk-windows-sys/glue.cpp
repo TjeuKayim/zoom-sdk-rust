@@ -60,12 +60,12 @@ InitParam ZOOM_SDK_NAMESPACE::InitParam_Default() {
     return initParam;
 }
 
-const wchar_t* IAccountInfo_GetDisplayName(IAccountInfo *self) {
+const wchar_t* ZOOM_SDK_NAMESPACE::IAccountInfo_GetDisplayName(IAccountInfo *self) {
     return self->GetDisplayName();
 }
-LoginType IAccountInfo_GetLoginType(IAccountInfo *self) {
+LoginType ZOOM_SDK_NAMESPACE::IAccountInfo_GetLoginType(IAccountInfo *self) {
     return self->GetLoginType();
 }
-void IAccountInfo_Drop(IAccountInfo *self) {
+void ZOOM_SDK_NAMESPACE::IAccountInfo_Drop(IAccountInfo *self) {
     delete self;
 }
