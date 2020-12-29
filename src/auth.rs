@@ -1,8 +1,8 @@
 use crate::{ffi, str_to_u16_vec, u16_ptr_to_os_string, Error, ErrorExt, ZoomResult};
 use std::ffi::c_void;
 use std::panic::catch_unwind;
-use std::ptr;
 use std::ptr::NonNull;
+use std::{fmt, ptr};
 
 pub struct AuthService {
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
@@ -10,7 +10,7 @@ pub struct AuthService {
 }
 
 struct Events {
-    authentication_return: Box<dyn FnMut()>,
+    authentication_return: Box<dyn FnMut(AuthResult)>,
     login_return: Box<dyn FnMut()>,
 }
 
@@ -68,7 +68,7 @@ impl AuthService {
 
 fn set_event(inner: NonNull<ffi::ZOOMSDK_IAuthService>) -> ZoomResult<Box<Events>> {
     let events = Box::new(Events {
-        authentication_return: Box::new(|| println!("auth ret")),
+        authentication_return: Box::new(|res| println!("auth ret {}", res)),
         login_return: Box::new(|| {}),
     });
     let callback_data = Box::into_raw(events);
@@ -82,20 +82,88 @@ fn set_event(inner: NonNull<ffi::ZOOMSDK_IAuthService>) -> ZoomResult<Box<Events
     Ok(events)
 }
 
+#[derive(Copy, Clone, Debug)]
+enum AuthResult {
+    /// Authentication is successful.
+    Success,
+    /// The key or secret to authenticate is empty.
+    KeyOrSecretEmpty,
+    /// The key or secret to authenticate is wrong.
+    KeyOrSecretWrong,
+    /// The user account does not support.
+    AccountNotSupport,
+    /// The user account is not enabled for SDK.
+    AccountNotEnableSdk,
+    /// Unknown error.
+    Unknown,
+    /// Service is busy.
+    ServiceBuzy,
+    /// Initial status.
+    None,
+    /// Time out.
+    OverTime,
+    /// Network issues.
+    NetworkIssue,
+    /// Account does not support this SDK version.
+    ClientIncompatible,
+    /// Unmapped.
+    Unmapped(i32),
+}
+
+impl fmt::Display for AuthResult {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(map_auth_result_description(*self))
+    }
+}
+
+fn map_auth_result(result: i32) -> AuthResult {
+    match result {
+        ffi::ZOOMSDK_AuthResult_AUTHRET_SUCCESS => AuthResult::Success,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_KEYORSECRETEMPTY => AuthResult::KeyOrSecretEmpty,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_KEYORSECRETWRONG => AuthResult::KeyOrSecretWrong,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTSUPPORT => AuthResult::AccountNotSupport,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTENABLESDK => AuthResult::AccountNotEnableSdk,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_UNKNOWN => AuthResult::Unknown,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_SERVICE_BUSY => AuthResult::ServiceBuzy,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_NONE => AuthResult::None,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_OVERTIME => AuthResult::OverTime,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_NETWORKISSUE => AuthResult::NetworkIssue,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_CLIENT_INCOMPATIBLE => AuthResult::ClientIncompatible,
+        _ => AuthResult::Unmapped(result),
+    }
+}
+
+fn map_auth_result_description(result: AuthResult) -> &'static str {
+    match result {
+        AuthResult::Success => "Authentication is successful",
+        AuthResult::KeyOrSecretEmpty => "The key or secret to authenticate is empty",
+        AuthResult::KeyOrSecretWrong => "The key or secret to authenticate is wrong",
+        AuthResult::AccountNotSupport => "The user account does not support",
+        AuthResult::AccountNotEnableSdk => "The user account is not enabled for SDK",
+        AuthResult::Unknown => "Unknown error",
+        AuthResult::ServiceBuzy => "Service is busy",
+        AuthResult::None => "Initial status",
+        AuthResult::OverTime => "Time out",
+        AuthResult::NetworkIssue => "Network issues",
+        AuthResult::ClientIncompatible => "Account does not support this SDK version",
+        _ => "Unknown AuthResult",
+    }
+}
+
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
         let events = &mut *(data as *mut Events);
-        (events.authentication_return)();
-        // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
-        //     let mut meeting_service = ptr::null_mut();
-        //     let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
-        //     dbg!(err);
-        //
-        //     invoke_init_status_callback("SDK Authenticated");
-        // } else {
-        //     invoke_init_status_callback("SDK Authentication failed");
-        // }
+        (events.authentication_return)(map_auth_result(res));
     });
+    // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
+    //     let mut meeting_service = ptr::null_mut();
+    //     let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
+    //     dbg!(err);
+    //
+    //     invoke_init_status_callback("SDK Authenticated");
+    // } else {
+    //     invoke_init_status_callback("SDK Authentication failed");
+    // }
 }
 
 unsafe extern "C" fn on_login_return(
@@ -103,8 +171,10 @@ unsafe extern "C" fn on_login_return(
     ret: ffi::ZOOMSDK_LOGINSTATUS,
     info: *mut ffi::ZOOMSDK_IAccountInfo,
 ) {
-    let events = &mut *(data as *mut Events);
-    (events.login_return)();
+    let _ = catch_unwind(|| {
+        let events = &mut *(data as *mut Events);
+        (events.login_return)();
+    });
     // dbg!(ret);
     // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
     //     invoke_init_status_callback("Logged in");
