@@ -12,6 +12,7 @@ use winapi::um::libloaderapi::GetModuleHandleA;
 use zoom_sdk_windows_sys as ffi;
 
 use error::{Error, ErrorExt, ZoomResult};
+use std::ptr::NonNull;
 
 mod error;
 
@@ -129,7 +130,7 @@ impl InitParam {
     // TODO: ConfigOpts, locale, permonitor_awareness_mode, renderOpts, rawdataOpts
 
     pub fn init_sdk(mut self) -> ZoomResult<Sdk> {
-        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap()?;
+        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(false)?;
         // TODO: Must CleanUPSDK be called if InitSDK failed?
         Ok(Sdk {})
     }
@@ -145,8 +146,22 @@ impl Sdk {
     }
 
     fn clean_up_internal(&self) -> ZoomResult<()> {
-        unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap()
+        unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap(true)
     }
+
+    pub fn create_auth_service(&mut self) -> ZoomResult<AuthService> {
+        let mut service = ptr::null_mut();
+        unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
+        if let Some(inner) = NonNull::new(service) {
+            Ok(AuthService { inner })
+        } else {
+            Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
+        }
+    }
+}
+
+pub struct AuthService {
+    inner: NonNull<ffi::ZOOMSDK_IAuthService>,
 }
 
 impl Drop for Sdk {
@@ -326,21 +341,5 @@ mod tests {
     fn zoom_version_equals() {
         let version = zoom_version();
         assert_eq!("5.2.1 (42037.1112)", &version);
-    }
-
-    #[test]
-    fn zoom_init() {
-        init();
-    }
-
-    #[test]
-    fn zoom_init_err() {
-        unsafe {
-            init();
-            std::thread::sleep(std::time::Duration::from_secs(10));
-            // assert_eq!(try_auth(), ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-            // std::thread::sleep(std::time::Duration::from_secs(10));
-            // dbg!(ON_AUTH);
-        }
     }
 }

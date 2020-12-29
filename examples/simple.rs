@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
     zoom_sdk::set_init_status_callback(move |t| app.init_status(t));
-    let zoom = zoom_sdk::InitParam::new()
+    let mut zoom = zoom_sdk::InitParam::new()
         .web_domain(Some("https://zoom.us"))
         .branding_name(Some("MyBranding"))
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
@@ -58,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_log_by_default(true)
         .enable_generate_dump(true)
         .init_sdk()?;
+    let auth = zoom.create_auth_service()?;
     nwg::dispatch_thread_events();
     Ok(())
 }
