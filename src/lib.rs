@@ -6,15 +6,19 @@
 use std::ffi::{c_void, OsString};
 use std::os::windows::prelude::*;
 use std::panic::catch_unwind;
-use std::{mem, ptr};
+use std::{fmt, mem, ptr};
 use winapi::shared::minwindef::HMODULE;
 use winapi::um::libloaderapi::GetModuleHandleA;
 use zoom_sdk_windows_sys as ffi;
 
+use error::{Error, ErrorExt, ZoomResult};
+
+mod error;
+
 pub fn zoom_version() -> String {
     unsafe {
         let version = ffi::ZOOMSDK_GetVersion();
-        let version = u16_ptr_to_string(version);
+        let version = u16_ptr_to_os_string(version);
         version.into_string().unwrap()
     }
 }
@@ -123,6 +127,32 @@ impl InitParam {
     }
 
     // TODO: ConfigOpts, locale, permonitor_awareness_mode, renderOpts, rawdataOpts
+
+    pub fn init_sdk(mut self) -> ZoomResult<Sdk> {
+        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap()?;
+        // TODO: Must CleanUPSDK be called if InitSDK failed?
+        Ok(Sdk {})
+    }
+}
+
+/// Initialized SDK returned by [`InitParam::init_sdk`].
+/// Drop runs [C++ CleanUPSDK](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
+pub struct Sdk {}
+
+impl Sdk {
+    pub fn clean_up_sdk(self) -> Result<(), (Error, Sdk)> {
+        self.clean_up_internal().map_err(|e| (e, self))
+    }
+
+    fn clean_up_internal(&self) -> ZoomResult<()> {
+        unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap()
+    }
+}
+
+impl Drop for Sdk {
+    fn drop(&mut self) {
+        self.clean_up_internal().unwrap();
+    }
 }
 
 /// Encodes nul-terminated wide string and stores in cache.
@@ -173,33 +203,6 @@ pub enum SdkLanguageId {
     Italian,
 }
 
-pub fn init() {
-    unsafe {
-        let web_domain = str_to_u16_vec("https://zoom.us");
-        let support_url = str_to_u16_vec("https://zoom.us");
-        let mut param = ffi::ZOOMSDK_InitParam_Default();
-        param.strWebDomain = web_domain.as_ptr();
-        param.strBrandingName = ptr::null();
-        param.strSupportUrl = support_url.as_ptr();
-        param.hResInstance = GetModuleHandleA(ptr::null()) as _;
-        // param.uiWindowIconSmallID = 0;
-        // param.uiWindowIconBigID = 0;
-        // param.emLanguageID = ffi::ZOOMSDK_SDK_LANGUAGE_ID_LANGUAGE_Unknow;
-        param.enableGenerateDump = true;
-        param.enableLogByDefault = true;
-        // param.uiLogFileSize = 5;
-        // param.obConfigOpts = mem::zeroed();
-        // param.locale = ffi::ZOOMSDK_SDK_APP_Locale_SDK_APP_Locale_Default;
-        // param.permonitor_awareness_mode = true;
-        // param.renderOpts = mem::zeroed();
-        // param.rawdataOpts = mem::zeroed();
-        dbg!(param);
-        let err = ffi::ZOOMSDK_InitSDK(&mut param);
-        assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-        try_auth();
-    }
-}
-
 static mut STATUS_CALLBACK: Option<Box<dyn Fn(&str)>> = None;
 
 pub fn set_init_status_callback(f: impl Fn(&str) + 'static) {
@@ -213,18 +216,19 @@ unsafe fn invoke_init_status_callback(text: &str) {
     STATUS_CALLBACK.as_ref().map(|f| f(text));
 }
 
-unsafe fn cleanup() {
-    let err = ffi::ZOOMSDK_CleanUPSDK();
-    assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-}
-
-unsafe fn u16_ptr_to_string(ptr: *const u16) -> OsString {
+unsafe fn u16_ptr_to_os_string(ptr: *const u16) -> OsString {
     if ptr.is_null() {
         return OsString::new();
     }
     let len = (0..).take_while(|&i| *ptr.offset(i) != 0).count();
     let slice = std::slice::from_raw_parts(ptr, len);
     OsString::from_wide(slice)
+}
+
+unsafe fn u16_to_string(ptr: *const u16) -> String {
+    u16_ptr_to_os_string(ptr)
+        .into_string()
+        .unwrap_or("Invalid string encoding".to_string())
 }
 
 fn str_to_u16_vec(s: &str) -> Vec<u16> {
@@ -308,20 +312,8 @@ unsafe extern "C" fn on_login_return(
     if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
         invoke_init_status_callback("Logged in");
         let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
-        dbg!(u16_ptr_to_string(display_name));
+        dbg!(u16_ptr_to_os_string(display_name));
         // ffi::ZOOMSDK_IAccountInfo_Drop(info); Should not be dropped apparently
-    }
-}
-
-unsafe fn dbg_error() {
-    let err_type = ffi::ZOOMSDK_GetZoomLastError();
-    dbg!(err_type);
-    if !err_type.is_null() {
-        dbg!(ffi::ZOOMSDK_IZoomLastError_GetErrorType(err_type));
-        dbg!(ffi::ZOOMSDK_IZoomLastError_GetErrorCode(err_type));
-        let description = ffi::ZOOMSDK_IZoomLastError_GetErrorDescription(err_type);
-        dbg!(u16_ptr_to_string(description));
-        // const pointers returned so don't need drop (demo\sdk_demo_v2\mess_info.cpp)
     }
 }
 

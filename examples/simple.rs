@@ -1,6 +1,8 @@
 use native_windows_derive::NwgUi;
 use native_windows_gui as nwg;
 use nwg::NativeUi;
+use std::ptr;
+use winapi::um::libloaderapi::GetModuleHandleA;
 
 #[derive(Default, NwgUi)]
 pub struct BasicApp {
@@ -43,13 +45,19 @@ impl BasicApp {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     nwg::init().expect("Failed to init Native Windows GUI");
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
     zoom_sdk::set_init_status_callback(move |t| app.init_status(t));
-    let init_param = zoom_sdk::InitParam::new()
+    let zoom = zoom_sdk::InitParam::new()
+        .web_domain(Some("https://zoom.us"))
+        .branding_name(Some("MyBranding"))
+        .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
         .em_language_id(zoom_sdk::SdkLanguageId::German)
-        .branding_name(Some("MyBranding"));
+        .enable_log_by_default(true)
+        .enable_generate_dump(true)
+        .init_sdk()?;
     nwg::dispatch_thread_events();
+    Ok(())
 }
