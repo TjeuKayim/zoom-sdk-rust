@@ -3,17 +3,17 @@
 //! The Zoom C++ API [must be called](https://devforum.zoom.us/t/list-of-active-audio-users-not-received-in-callback/1397/9)
 //! from the single thread that runs the Windows message loop.
 
-use std::ffi::{c_void, OsString};
+use std::ffi::OsString;
 use std::os::windows::prelude::*;
-use std::panic::catch_unwind;
-use std::{fmt, mem, ptr};
+use std::ptr;
+use std::ptr::NonNull;
 use winapi::shared::minwindef::HMODULE;
-use winapi::um::libloaderapi::GetModuleHandleA;
 use zoom_sdk_windows_sys as ffi;
 
+use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
-use std::ptr::NonNull;
 
+mod auth;
 mod error;
 
 pub fn zoom_version() -> String {
@@ -140,6 +140,12 @@ impl InitParam {
 /// Drop runs [C++ CleanUPSDK](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
 pub struct Sdk {}
 
+impl Drop for Sdk {
+    fn drop(&mut self) {
+        self.clean_up_internal().unwrap();
+    }
+}
+
 impl Sdk {
     pub fn clean_up_sdk(self) -> Result<(), (Error, Sdk)> {
         self.clean_up_internal().map_err(|e| (e, self))
@@ -150,23 +156,7 @@ impl Sdk {
     }
 
     pub fn create_auth_service(&mut self) -> ZoomResult<AuthService> {
-        let mut service = ptr::null_mut();
-        unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
-        if let Some(inner) = NonNull::new(service) {
-            Ok(AuthService { inner })
-        } else {
-            Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
-        }
-    }
-}
-
-pub struct AuthService {
-    inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-}
-
-impl Drop for Sdk {
-    fn drop(&mut self) {
-        self.clean_up_internal().unwrap();
+        AuthService::new()
     }
 }
 
@@ -218,19 +208,6 @@ pub enum SdkLanguageId {
     Italian,
 }
 
-static mut STATUS_CALLBACK: Option<Box<dyn Fn(&str)>> = None;
-
-pub fn set_init_status_callback(f: impl Fn(&str) + 'static) {
-    // TODO: Very very unsafe
-    // let x = Box::<dyn Fn(&str)>::new(f);
-    // unsafe { STATUS_CALLBACK = Some(std::mem::transmute(x)) };
-    unsafe { STATUS_CALLBACK = Some(Box::new(f)) };
-}
-
-unsafe fn invoke_init_status_callback(text: &str) {
-    STATUS_CALLBACK.as_ref().map(|f| f(text));
-}
-
 unsafe fn u16_ptr_to_os_string(ptr: *const u16) -> OsString {
     if ptr.is_null() {
         return OsString::new();
@@ -251,85 +228,6 @@ fn str_to_u16_vec(s: &str) -> Vec<u16> {
     os.push(s);
     os.push("\0");
     os.encode_wide().collect()
-}
-
-static mut ON_AUTH: bool = false;
-static mut AUTH_SERVICE: *mut ffi::ZOOMSDK_IAuthService = ptr::null_mut();
-
-unsafe fn try_auth() -> i32 {
-    let err = ffi::ZOOMSDK_CreateAuthService(&mut AUTH_SERVICE);
-    assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-    let callback_data = Box::into_raw(Box::new(144));
-    let event = ffi::ZOOMSDK_CAuthServiceEvent {
-        callbackData: callback_data as _,
-        authenticationReturn: Some(on_authentication_return),
-        loginReturn: Some(on_login_return),
-    };
-    let err = ffi::ZOOMSDK_IAuthService_SetEvent(AUTH_SERVICE, &event);
-    assert_eq!(err, ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS);
-    let app_key: Vec<u16> = std::env::var_os("ZOOM_SDK_KEY")
-        .unwrap()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    let app_secret: Vec<u16> = std::env::var_os("ZOOM_SDK_SECRET")
-        .unwrap()
-        .encode_wide()
-        .chain(Some(0))
-        .collect();
-    let param = ffi::ZOOMSDK_AuthParam {
-        appKey: &app_key[0],
-        appSecret: &app_secret[0],
-    };
-    let err = ffi::ZOOMSDK_IAuthService_SDKAuthParam(AUTH_SERVICE, param);
-    err
-}
-
-unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
-    catch_unwind(|| {
-        let data = data as *mut i32;
-        dbg!(*data, res);
-        ON_AUTH = true;
-        if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
-            let mut meeting_service = ptr::null_mut();
-            let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
-            dbg!(err);
-
-            // Login
-            let username = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_USER").unwrap());
-            let password = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_PASS").unwrap());
-            let param = ffi::ZOOMSDK_LoginParam {
-                loginType: ffi::ZOOMSDK_LoginType_LoginType_Email,
-                ut: ffi::ZOOMSDK_tagLoginParam__bindgen_ty_1 {
-                    emailLogin: ffi::ZOOMSDK_tagLoginParam4Email {
-                        bRememberMe: true,
-                        userName: username.as_ptr(),
-                        password: password.as_ptr(),
-                    },
-                },
-            };
-            dbg!(AUTH_SERVICE.is_null());
-            let err = ffi::ZOOMSDK_IAuthService_Login(AUTH_SERVICE, param);
-            dbg!(err);
-            invoke_init_status_callback("SDK Authenticated");
-        } else {
-            invoke_init_status_callback("SDK Authentication failed");
-        }
-    });
-}
-
-unsafe extern "C" fn on_login_return(
-    data: *mut c_void,
-    ret: ffi::ZOOMSDK_LOGINSTATUS,
-    info: *mut ffi::ZOOMSDK_IAccountInfo,
-) {
-    dbg!(ret);
-    if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
-        invoke_init_status_callback("Logged in");
-        let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
-        dbg!(u16_ptr_to_os_string(display_name));
-        // ffi::ZOOMSDK_IAccountInfo_Drop(info); Should not be dropped apparently
-    }
 }
 
 #[cfg(test)]
