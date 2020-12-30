@@ -23,3 +23,4 @@ path = "zoom-sdk-windows-sys"
 [dev-dependencies]
 native-windows-gui = "1.0.7"
 native-windows-derive = "1.0.2"
+embed-resource = "1.4"

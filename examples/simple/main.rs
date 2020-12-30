@@ -52,6 +52,8 @@ fn main() -> Result<(), zoom_sdk::error::Error> {
     let mut zoom = zoom_sdk::InitParam::new()
         .branding_name(Some("MyBranding"))
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
+        .ui_window_icon_big_id(2734)
+        .ui_window_icon_small_id(2734)
         .em_language_id(zoom_sdk::SdkLanguageId::German)
         .enable_log_by_default(true)
         .enable_generate_dump(true)
