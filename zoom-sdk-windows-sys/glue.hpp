@@ -24,6 +24,5 @@ namespace ZOOM_SDK_NAMESPACE {
 
     const wchar_t* IAccountInfo_GetDisplayName(IAccountInfo *self);
     LoginType IAccountInfo_GetLoginType(IAccountInfo *self);
-    void IAccountInfo_Drop(IAccountInfo *self);
     }
 }

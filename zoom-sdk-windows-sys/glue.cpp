@@ -66,6 +66,3 @@ const wchar_t* ZOOM_SDK_NAMESPACE::IAccountInfo_GetDisplayName(IAccountInfo *sel
 LoginType ZOOM_SDK_NAMESPACE::IAccountInfo_GetLoginType(IAccountInfo *self) {
     return self->GetLoginType();
 }
-void ZOOM_SDK_NAMESPACE::IAccountInfo_Drop(IAccountInfo *self) {
-    delete self;
-}

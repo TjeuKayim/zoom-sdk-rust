@@ -1,8 +1,13 @@
-use crate::{ffi, str_to_u16_vec, u16_ptr_to_os_string, Error, ErrorExt, Sdk, ZoomResult};
+use crate::auth::AuthResult::AccountNotEnableSdk;
+use crate::{
+    ffi, str_to_u16_vec, u16_ptr_to_os_string, u16_to_string, Error, ErrorExt, Sdk, ZoomResult,
+};
 use std::ffi::c_void;
+use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
 use std::{fmt, ptr};
+use winapi::um::winuser::LoadAcceleratorsA;
 
 /// Authentication Service
 pub struct AuthService<'a> {
@@ -14,7 +19,7 @@ pub struct AuthService<'a> {
 
 struct Events {
     authentication_return: Box<dyn FnMut(AuthResult)>,
-    login_return: Box<dyn FnMut()>,
+    login_return: Box<dyn FnMut(LoginStatus)>,
 }
 
 impl Drop for AuthService<'_> {
@@ -72,7 +77,12 @@ impl<'a> AuthService<'a> {
 fn set_event(inner: NonNull<ffi::ZOOMSDK_IAuthService>) -> ZoomResult<Box<Events>> {
     let events = Box::new(Events {
         authentication_return: Box::new(|res| println!("auth ret {}", res)),
-        login_return: Box::new(|| {}),
+        login_return: Box::new(|status| {
+            println!("login status {:?}", status);
+            if let LoginStatus::Success(info) = status {
+                println!("name {}", info.get_display_name());
+            }
+        }),
     });
     let callback_data = Box::into_raw(events);
     let events = unsafe { Box::from_raw(callback_data) };
@@ -153,6 +163,41 @@ fn map_auth_result_description(result: AuthResult) -> &'static str {
     }
 }
 
+#[derive(Debug)]
+pub enum LoginStatus<'a> {
+    /// Not logged in.
+    Idle,
+    /// In process of login.
+    Processing,
+    /// Login successful.
+    Success(AccountInfo<'a>),
+    /// Login failed.
+    Failed,
+    /// Unmapped.
+    Unmapped(i32),
+}
+
+#[derive(Debug)]
+pub struct AccountInfo<'a> {
+    raw: NonNull<ffi::ZOOMSDK_IAccountInfo>,
+    // IAccountInfo should not be dropped apparently, but is only valid for in the callback
+    phantom: PhantomData<&'a AuthService<'a>>,
+}
+
+impl<'a> AccountInfo<'a> {
+    fn new(raw: *mut ffi::ZOOMSDK_IAccountInfo, _lifetime: &'a ()) -> Self {
+        AccountInfo {
+            raw: NonNull::new(raw).expect("IAccountInfo null"),
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn get_display_name(&self) -> String {
+        unsafe { u16_to_string(ffi::ZOOMSDK_IAccountInfo_GetDisplayName(self.raw.as_ptr())) }
+    }
+    // TODO: GetLoginType
+}
+
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
         let events = &mut *(data as *mut Events);
@@ -174,15 +219,23 @@ unsafe extern "C" fn on_login_return(
     ret: ffi::ZOOMSDK_LOGINSTATUS,
     info: *mut ffi::ZOOMSDK_IAccountInfo,
 ) {
+    let lifetime = ();
     let _ = catch_unwind(|| {
         let events = &mut *(data as *mut Events);
-        (events.login_return)();
+        let status = match ret {
+            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
+            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
+            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS => {
+                LoginStatus::Success(AccountInfo::new(info, &lifetime))
+            }
+            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
+            _ => LoginStatus::Unmapped(ret),
+        };
+        (events.login_return)(status);
     });
     // dbg!(ret);
     // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
     //     invoke_init_status_callback("Logged in");
     //     let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
     //     dbg!(u16_ptr_to_os_string(display_name));
-    //     // ffi::ZOOMSDK_IAccountInfo_Drop(info); Should not be dropped apparently
-    // }
 }
