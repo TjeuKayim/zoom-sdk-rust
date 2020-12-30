@@ -45,10 +45,17 @@ impl BasicApp {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     nwg::init().expect("Failed to init Native Windows GUI");
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
+    std::thread::spawn(|| {
+        start().unwrap();
+    });
+    nwg::dispatch_thread_events();
+}
+
+fn start() -> Result<(), Box<dyn std::error::Error>> {
     let mut zoom = zoom_sdk::InitParam::new()
         .web_domain(Some("https://zoom.us"))
         .branding_name(Some("MyBranding"))
@@ -57,8 +64,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_log_by_default(true)
         .enable_generate_dump(true)
         .init_sdk()?;
-    let mut auth = zoom.create_auth_service()?;
-    auth.sdk_auth()?;
+    println!("Initialized");
+    std::thread::spawn(move || -> Result<(), zoom_sdk::error::Error> {
+        let mut auth = zoom.create_auth_service()?;
+        auth.sdk_auth()?;
+        println!("auth service created");
+        nwg::dispatch_thread_events();
+        Ok(())
+    });
+    // .join()
+    // .unwrap();
     nwg::dispatch_thread_events();
+    println!("start finished");
     Ok(())
 }
