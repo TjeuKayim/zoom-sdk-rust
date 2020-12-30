@@ -13,8 +13,8 @@ use zoom_sdk_windows_sys as ffi;
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
 
-mod auth;
-mod error;
+pub mod auth;
+pub mod error;
 
 pub fn zoom_version() -> String {
     unsafe {
@@ -156,7 +156,7 @@ impl Sdk {
     }
 
     pub fn create_auth_service(&mut self) -> ZoomResult<AuthService> {
-        AuthService::new()
+        AuthService::new(self)
     }
 }
 

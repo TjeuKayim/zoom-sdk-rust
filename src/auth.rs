@@ -1,12 +1,13 @@
-use crate::{ffi, str_to_u16_vec, u16_ptr_to_os_string, Error, ErrorExt, ZoomResult};
+use crate::{ffi, str_to_u16_vec, u16_ptr_to_os_string, Error, ErrorExt, Sdk, ZoomResult};
 use std::ffi::c_void;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
 use std::{fmt, ptr};
 
-pub struct AuthService {
+pub struct AuthService<'a> {
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
     events: Box<Events>,
+    sdk: &'a Sdk,
 }
 
 struct Events {
@@ -14,7 +15,7 @@ struct Events {
     login_return: Box<dyn FnMut()>,
 }
 
-impl Drop for AuthService {
+impl Drop for AuthService<'_> {
     fn drop(&mut self) {
         unsafe { ffi::ZOOMSDK_DestroyAuthService(self.inner.as_ptr()) }
             .err_wrap(true)
@@ -22,13 +23,13 @@ impl Drop for AuthService {
     }
 }
 
-impl AuthService {
-    pub(crate) fn new() -> ZoomResult<Self> {
+impl<'a> AuthService<'a> {
+    pub(crate) fn new(sdk: &'a Sdk) -> ZoomResult<Self> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
             let events = set_event(inner)?;
-            Ok(AuthService { inner, events })
+            Ok(AuthService { inner, events, sdk })
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
         }
