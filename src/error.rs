@@ -62,6 +62,7 @@ impl Error {
 #[derive(Debug)]
 struct ErrorDetail {
     category: &'static str,
+    /// <https://marketplace.zoom.us/docs/sdk/native-sdks/windows/resource/error-codes>
     code: u64,
     description: String,
 }

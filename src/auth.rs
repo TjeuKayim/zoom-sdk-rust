@@ -4,7 +4,9 @@ use std::panic::catch_unwind;
 use std::ptr::NonNull;
 use std::{fmt, ptr};
 
+/// Authentication Service
 pub struct AuthService<'a> {
+    /// This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
     events: Box<Events>,
     sdk: &'a Sdk,

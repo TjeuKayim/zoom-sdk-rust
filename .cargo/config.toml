@@ -1,2 +1,3 @@
 [build]
 target = "i686-pc-windows-msvc"
+# cargo +nightly test --doc -Zdoctest-xcompile

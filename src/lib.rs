@@ -6,12 +6,12 @@
 use std::ffi::OsString;
 use std::os::windows::prelude::*;
 use std::ptr;
-use std::ptr::NonNull;
 use winapi::shared::minwindef::HMODULE;
 use zoom_sdk_windows_sys as ffi;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
+use std::marker::PhantomData;
 
 pub mod auth;
 pub mod error;
@@ -39,7 +39,7 @@ pub struct InitParam {
 impl InitParam {
     /// Creates default builder for InitParam.
     pub fn new() -> Self {
-        Self {
+        let param = Self {
             param: unsafe { ffi::ZOOMSDK_InitParam_Default() },
             // string_cache: StringCache(Vec::new()),
             web_domain: None,
@@ -52,10 +52,11 @@ impl InitParam {
             // enable_generate_dump: false,
             // enable_log_by_default: false,
             // ui_log_file_size: 5,
-        }
+        };
+        param.web_domain(Some("https://zoom.us"))
     }
 
-    /// Web domain.
+    /// Web domain, defaults to 'https://zoom.us'.
     pub fn web_domain(mut self, web_domain: Option<&str>) -> Self {
         option_str_encode_nul_wide(
             &mut self.web_domain,
@@ -130,15 +131,39 @@ impl InitParam {
     // TODO: ConfigOpts, locale, permonitor_awareness_mode, renderOpts, rawdataOpts
 
     pub fn init_sdk(mut self) -> ZoomResult<Sdk> {
-        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(false)?;
+        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(true)?;
         // TODO: Must CleanUPSDK be called if InitSDK failed?
-        Ok(Sdk {})
+        Ok(Sdk {
+            phantom: PhantomData,
+        })
     }
 }
 
 /// Initialized SDK returned by [`InitParam::init_sdk`].
 /// Drop runs [C++ CleanUPSDK](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
-pub struct Sdk {}
+///
+/// # Examples
+///
+/// ```
+/// fn main() -> Result<(), zoom_sdk::error::Error> {
+/// let sdk = zoom_sdk::InitParam::new().init_sdk()?;
+/// Ok(())
+/// }
+/// ```
+///
+/// Can't be send to another thread:
+///
+/// ```compile_fail
+/// fn main() -> Result<(), zoom_sdk::error::Error> {
+/// let sdk = zoom_sdk::InitParam::new().init_sdk()?;
+/// std::thread::spawn(move || { sdk.clean_up(); });
+/// Ok(())
+/// }
+/// ```
+pub struct Sdk {
+    /// This struct is not supposed to be Send nor Sync
+    phantom: PhantomData<*mut ()>,
+}
 
 impl Drop for Sdk {
     fn drop(&mut self) {
@@ -147,7 +172,7 @@ impl Drop for Sdk {
 }
 
 impl Sdk {
-    pub fn clean_up_sdk(self) -> Result<(), (Error, Sdk)> {
+    pub fn clean_up(self) -> Result<(), (Error, Sdk)> {
         self.clean_up_internal().map_err(|e| (e, self))
     }
 
