@@ -7,7 +7,6 @@ use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
 use std::{fmt, ptr};
-use winapi::um::winuser::LoadAcceleratorsA;
 
 /// Authentication Service
 pub struct AuthService<'a> {
@@ -27,6 +26,12 @@ impl Drop for AuthService<'_> {
         unsafe { ffi::ZOOMSDK_DestroyAuthService(self.inner.as_ptr()) }
             .err_wrap(true)
             .unwrap();
+    }
+}
+
+impl fmt::Debug for AuthService<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("zoom_sdk::AuthService").finish()
     }
 }
 

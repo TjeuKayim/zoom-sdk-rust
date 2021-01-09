@@ -4,14 +4,16 @@
 //! from the single thread that runs the Windows message loop.
 
 use std::ffi::OsString;
+use std::marker::PhantomData;
 use std::os::windows::prelude::*;
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winapi::shared::minwindef::HMODULE;
 use zoom_sdk_windows_sys as ffi;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
-use std::marker::PhantomData;
+use winapi::um::winbase::InitAtomTable;
 
 pub mod auth;
 pub mod error;
@@ -131,6 +133,9 @@ impl InitParam {
     // TODO: ConfigOpts, locale, permonitor_awareness_mode, renderOpts, rawdataOpts
 
     pub fn init_sdk(mut self) -> ZoomResult<Sdk> {
+        if INITIALIZED.swap(true, Ordering::SeqCst) {
+            return Err(Error::new_rust("Only one Sdk can exist at a time"));
+        }
         unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(true)?;
         // TODO: Must CleanUPSDK be called if InitSDK failed?
         Ok(Sdk {
@@ -138,6 +143,8 @@ impl InitParam {
         })
     }
 }
+
+static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 /// Initialized SDK returned by [`InitParam::init_sdk`].
 /// Drop runs [C++ CleanUPSDK](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
@@ -181,7 +188,9 @@ impl Sdk {
     /// # Safety
     /// Must only be called once.
     unsafe fn clean_up_internal(&self) -> ZoomResult<()> {
-        unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap(true)
+        let r = unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap(true);
+        INITIALIZED.store(false, Ordering::SeqCst);
+        r
     }
 
     pub fn create_auth_service(&mut self) -> ZoomResult<AuthService> {
@@ -267,7 +276,7 @@ mod tests {
     #[test]
     fn zoom_version_equals() {
         let version = zoom_version();
-        assert_eq!("5.2.1 (42037.1112)", &version);
+        assert_eq!("5.4.3 (54524.1229)", &version);
     }
 
     #[test]
@@ -280,13 +289,24 @@ mod tests {
         // Run clean up before initialize
         uninitialized().clean_up().unwrap();
         uninitialized().clean_up().unwrap();
+        // Version 5.2.1 failed this tests.
         // SDK can be initialized and cleaned up multiple times,
         // but can't be initialized second time after clean up ran once.
-        let sdk1 = InitParam::new().init_sdk().unwrap();
-        sdk1.clean_up();
-        // uninitialized().clean_up().unwrap(); // STATUS_ACCESS_VIOLATION
-        let sdk2 = InitParam::new().init_sdk().unwrap();
-        // unsafe { sdk1.clean_up_internal() };
+        // STATUS_ACCESS_VIOLATION was thrown.
+        // So it might not be intended to run init multiple times.
+        // Since version 5.4.3 this was fixed.
+        let mut sdk1 = InitParam::new().init_sdk().unwrap();
+        sdk1.create_auth_service().unwrap();
+        let err = InitParam::new().init_sdk().unwrap_err();
+        assert_eq!(
+            &format!("{}", err),
+            r#"zoom_sdk::Error { type: Rust, message: "Only one Sdk can exist at a time" }"#
+        );
+        sdk1.clean_up().unwrap();
+        let mut sdk2 = InitParam::new().init_sdk().unwrap();
+        sdk2.create_auth_service().unwrap();
+        unsafe { sdk2.clean_up_internal().unwrap() };
+        sdk2.create_auth_service().unwrap_err();
         // unsafe { sdk2.clean_up_internal() };
         // sdk2.clean_up();
     }
