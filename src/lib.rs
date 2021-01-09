@@ -160,6 +160,7 @@ impl InitParam {
 /// Ok(())
 /// }
 /// ```
+#[derive(Debug)]
 pub struct Sdk {
     /// This struct is not supposed to be Send nor Sync
     phantom: PhantomData<*mut ()>,
@@ -167,16 +168,19 @@ pub struct Sdk {
 
 impl Drop for Sdk {
     fn drop(&mut self) {
-        self.clean_up_internal().unwrap();
+        unsafe { self.clean_up_internal().unwrap() };
     }
 }
 
 impl Sdk {
     pub fn clean_up(self) -> Result<(), (Error, Sdk)> {
-        self.clean_up_internal().map_err(|e| (e, self))
+        unsafe { self.clean_up_internal().map_err(|e| (e, self)) }
     }
 
-    fn clean_up_internal(&self) -> ZoomResult<()> {
+    /// CleanUPSDK
+    /// # Safety
+    /// Must only be called once.
+    unsafe fn clean_up_internal(&self) -> ZoomResult<()> {
         unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap(true)
     }
 
@@ -264,5 +268,26 @@ mod tests {
     fn zoom_version_equals() {
         let version = zoom_version();
         assert_eq!("5.2.1 (42037.1112)", &version);
+    }
+
+    #[test]
+    fn zoom_init_again() {
+        fn uninitialized() -> Sdk {
+            Sdk {
+                phantom: PhantomData,
+            }
+        }
+        // Run clean up before initialize
+        uninitialized().clean_up().unwrap();
+        uninitialized().clean_up().unwrap();
+        // SDK can be initialized and cleaned up multiple times,
+        // but can't be initialized second time after clean up ran once.
+        let sdk1 = InitParam::new().init_sdk().unwrap();
+        sdk1.clean_up();
+        // uninitialized().clean_up().unwrap(); // STATUS_ACCESS_VIOLATION
+        let sdk2 = InitParam::new().init_sdk().unwrap();
+        // unsafe { sdk1.clean_up_internal() };
+        // unsafe { sdk2.clean_up_internal() };
+        // sdk2.clean_up();
     }
 }
