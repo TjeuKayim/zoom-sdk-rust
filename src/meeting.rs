@@ -41,7 +41,7 @@ impl<'a> MeetingService<'a> {
     }
 
     /// Join meeting with web uri.
-    pub fn handle_zoom_web_uri_protocol_action(&mut self, uri: &str) -> ZoomResult<()> {
+    pub fn handle_zoom_web_uri_protocol_action(&self, uri: &str) -> ZoomResult<()> {
         let uri = str_to_u16_vec(uri);
         let p = self.inner.as_ptr();
         unsafe {

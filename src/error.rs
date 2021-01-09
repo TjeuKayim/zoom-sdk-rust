@@ -2,7 +2,7 @@ use crate::ffi;
 use std::borrow::Cow;
 use std::fmt;
 
-pub(crate) type ZoomResult<T> = std::result::Result<T, Error>;
+pub type ZoomResult<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Error {

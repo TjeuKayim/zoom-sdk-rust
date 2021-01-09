@@ -4,6 +4,7 @@ use nwg::NativeUi;
 use std::ptr;
 use std::sync::RwLock;
 use winapi::um::libloaderapi::GetModuleHandleA;
+use zoom_sdk::error::ZoomResult;
 
 #[derive(Default, NwgUi)]
 pub struct BasicApp {
@@ -44,6 +45,17 @@ impl BasicApp {
     fn say_goodbye(&self) {
         nwg::stop_thread_dispatch();
     }
+
+    fn report_error(&self, err_message: &str) {
+        nwg::modal_error_message(&self.window, "Error", err_message);
+    }
+
+    fn catch_error(&self, f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {
+        f().unwrap_or_else(|e| {
+            println!("{0}, detail {0:?}", &e);
+            self.report_error(&format!("{}", &e));
+        });
+    }
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,23 +73,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init_sdk()?;
     println!("Initialized");
     let mut meeting = zoom.create_meeting_service()?;
-    let auth = zoom.create_auth_service()?;
+    let mut auth = zoom.create_auth_service()?;
     auth.set_event(zoom_sdk::auth::AuthServiceEvent {
         authentication_return: Box::new(|auth, res| {
-            app.init_status(&format!("Authentication {:?}", res));
-            println!("AuthResult {:?}", res);
-            let username = std::env::var("ZOOM_LOGIN_USER").unwrap();
-            let password = std::env::var("ZOOM_LOGIN_PASS").unwrap();
-            auth.login(&username, &password, false);
+            app.catch_error(|| {
+                app.init_status(&format!("Authentication {:?}", res));
+                println!("AuthResult {:?}", res);
+                let username = std::env::var("ZOOM_LOGIN_USER")?;
+                let password = std::env::var("ZOOM_LOGIN_PASS")?;
+                auth.login(&username, &password, false)?;
+                Ok(())
+            });
         }),
         login_return: Box::new(|auth, status| {
-            println!("login status {:?}", status);
-            if let zoom_sdk::auth::LoginStatus::Success(info) = status {
-                let name = info.get_display_name();
-                println!("name {}", name);
-                app.init_status(&format!("Logged in as {}", name));
-                meeting.handle_zoom_web_uri_protocol_action("");
-            }
+            app.catch_error(|| {
+                println!("login status {:?}", status);
+                if let zoom_sdk::auth::LoginStatus::Success(info) = status {
+                    let name = info.get_display_name();
+                    println!("name {}", name);
+                    app.init_status(&format!("Logged in as {}", name));
+                    let uri = std::env::var("ZOOM_URI")?;
+                    meeting.handle_zoom_web_uri_protocol_action(&uri)?;
+                }
+                Ok(())
+            });
         }),
     })?;
     auth.sdk_auth()?;

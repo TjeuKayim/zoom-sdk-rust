@@ -3,14 +3,13 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
-use std::sync::Mutex;
 use std::{fmt, ptr};
 
 /// Authentication Service
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    data: Mutex<Data<'a>>,
+    data: Data<'a>,
 }
 
 enum Data<'a> {
@@ -27,8 +26,8 @@ pub struct AuthServiceEvent<'a> {
     // TODO: Use generic type param instead of dyn here
     //       or make this a trait.
     // TODO: How to handle errors?
-    pub authentication_return: Box<dyn FnMut(&AuthService, AuthResult) + 'a>,
-    pub login_return: Box<dyn FnMut(&AuthService, LoginStatus) + 'a>,
+    pub authentication_return: Box<dyn Fn(&AuthService, AuthResult) + 'a>,
+    pub login_return: Box<dyn Fn(&AuthService, LoginStatus) + 'a>,
 }
 
 impl Drop for AuthService<'_> {
@@ -52,7 +51,7 @@ impl<'a> AuthService<'a> {
         if let Some(inner) = NonNull::new(service) {
             Ok(AuthService {
                 inner,
-                data: Mutex::new(Data::Boxed { events: None }),
+                data: Data::Boxed { events: None },
             })
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
@@ -90,16 +89,16 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(&self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        let callback_data = match &mut *self.data.lock().unwrap() {
+    pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
+        let callback_data = match &mut self.data {
             Data::Inline { events: e } => {
                 *e = events;
-                self as *const AuthService as *mut AuthService
+                self as *mut AuthService
             }
             Data::Boxed { events: e } => {
                 let mut b = Box::new(AuthService {
                     inner: self.inner,
-                    data: Mutex::new(Data::Inline { events }),
+                    data: Data::Inline { events },
                 });
                 let p = &mut *b as *mut AuthService;
                 *e = Some(b);
@@ -224,7 +223,7 @@ impl<'a> AccountInfo<'a> {
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
         let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &mut *service.data.lock().unwrap() {
+        if let Data::Inline { events } = &service.data {
             (events.authentication_return)(service, map_auth_result(res));
         }
     });
@@ -256,7 +255,7 @@ unsafe extern "C" fn on_login_return(
             _ => LoginStatus::Unmapped(ret),
         };
         let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &mut *service.data.lock().unwrap() {
+        if let Data::Inline { events } = &service.data {
             (events.login_return)(service, status);
         }
     });
