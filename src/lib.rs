@@ -195,7 +195,7 @@ impl Sdk {
     }
 
     pub fn create_auth_service(&self) -> ZoomResult<AuthService> {
-        AuthService::new(self)
+        AuthService::new()
     }
 
     pub fn create_meeting_service(&self) -> ZoomResult<MeetingService> {

@@ -8,20 +8,27 @@ use std::{fmt, ptr};
 
 /// Authentication Service
 pub struct AuthService<'a> {
-    /// This struct is not supposed to be Send nor Sync
+    // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    #[allow(dead_code)]
-    events: Mutex<Option<Box<AuthServiceEvent<'a>>>>,
-    #[allow(dead_code)]
-    sdk: &'a Sdk,
+    data: Mutex<Data<'a>>,
+}
+
+enum Data<'a> {
+    Boxed {
+        events: Option<Box<AuthService<'a>>>,
+    },
+    Inline {
+        #[allow(dead_code)]
+        events: AuthServiceEvent<'a>,
+    },
 }
 
 pub struct AuthServiceEvent<'a> {
     // TODO: Use generic type param instead of dyn here
     //       or make this a trait.
     // TODO: How to handle errors?
-    pub authentication_return: Box<dyn FnMut(AuthResult) + 'a>,
-    pub login_return: Box<dyn FnMut(LoginStatus) + 'a>,
+    pub authentication_return: Box<dyn FnMut(&AuthService, AuthResult) + 'a>,
+    pub login_return: Box<dyn FnMut(&AuthService, LoginStatus) + 'a>,
 }
 
 impl Drop for AuthService<'_> {
@@ -39,14 +46,13 @@ impl fmt::Debug for AuthServiceEvent<'_> {
 }
 
 impl<'a> AuthService<'a> {
-    pub(crate) fn new(sdk: &'a Sdk) -> ZoomResult<Self> {
+    pub(crate) fn new() -> ZoomResult<Self> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
             Ok(AuthService {
                 inner,
-                sdk,
-                events: Mutex::new(None),
+                data: Mutex::new(Data::Boxed { events: None }),
             })
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
@@ -85,9 +91,21 @@ impl<'a> AuthService<'a> {
     }
 
     pub fn set_event(&self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        let mut events = Box::new(events);
-        let callback_data = &mut *events as *mut AuthServiceEvent;
-        *self.events.lock().unwrap() = Some(events);
+        let callback_data = match &mut *self.data.lock().unwrap() {
+            Data::Inline { events: e } => {
+                *e = events;
+                self as *const AuthService as *mut AuthService
+            }
+            Data::Boxed { events: e } => {
+                let mut b = Box::new(AuthService {
+                    inner: self.inner,
+                    data: Mutex::new(Data::Inline { events }),
+                });
+                let p = &mut *b as *mut AuthService;
+                *e = Some(b);
+                p
+            }
+        };
         let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
             callbackData: callback_data as _,
             authenticationReturn: Some(on_authentication_return),
@@ -205,8 +223,10 @@ impl<'a> AccountInfo<'a> {
 
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
-        let events = &mut *(data as *mut AuthServiceEvent);
-        (events.authentication_return)(map_auth_result(res));
+        let service = &mut *(data as *mut AuthService);
+        if let Data::Inline { events } = &mut *service.data.lock().unwrap() {
+            (events.authentication_return)(service, map_auth_result(res));
+        }
     });
     // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
     //     let mut meeting_service = ptr::null_mut();
@@ -226,7 +246,6 @@ unsafe extern "C" fn on_login_return(
 ) {
     let lifetime = ();
     let _ = catch_unwind(|| {
-        let events = &mut *(data as *mut AuthServiceEvent);
         let status = match ret {
             ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
             ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
@@ -236,7 +255,10 @@ unsafe extern "C" fn on_login_return(
             ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
             _ => LoginStatus::Unmapped(ret),
         };
-        (events.login_return)(status);
+        let service = &mut *(data as *mut AuthService);
+        if let Data::Inline { events } = &mut *service.data.lock().unwrap() {
+            (events.login_return)(service, status);
+        }
     });
     // dbg!(ret);
     // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {

@@ -63,14 +63,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut meeting = zoom.create_meeting_service()?;
     let auth = zoom.create_auth_service()?;
     auth.set_event(zoom_sdk::auth::AuthServiceEvent {
-        authentication_return: Box::new(|res| {
+        authentication_return: Box::new(|auth, res| {
             app.init_status(&format!("Authentication {:?}", res));
             println!("AuthResult {:?}", res);
             let username = std::env::var("ZOOM_LOGIN_USER").unwrap();
             let password = std::env::var("ZOOM_LOGIN_PASS").unwrap();
             auth.login(&username, &password, false);
         }),
-        login_return: Box::new(|status| {
+        login_return: Box::new(|auth, status| {
             println!("login status {:?}", status);
             if let zoom_sdk::auth::LoginStatus::Success(info) = status {
                 let name = info.get_display_name();
