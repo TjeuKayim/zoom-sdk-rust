@@ -63,11 +63,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
     let zoom = zoom_sdk::InitParam::new()
-        .branding_name(Some("MyBranding"))
+        .branding_name(Some("RustWrapper"))
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
         .ui_window_icon_big_id(2734)
         .ui_window_icon_small_id(2734)
-        .em_language_id(zoom_sdk::SdkLanguageId::German)
+        .em_language_id(zoom_sdk::SdkLanguageId::English)
         .enable_log_by_default(true)
         .enable_generate_dump(true)
         .init_sdk()?;

@@ -1,3 +1,3 @@
 fn main() {
-    embed_resource::compile("app-name-manifest.rc");
+    embed_resource::compile("simple-manifest.rc");
 }

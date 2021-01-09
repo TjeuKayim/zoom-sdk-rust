@@ -474,11 +474,19 @@ dependencies = [
 name = "zoom-sdk"
 version = "0.1.0"
 dependencies = [
+ "winapi",
+ "zoom-sdk-windows-sys",
+]
+
+[[package]]
+name = "zoom-sdk-example-simple"
+version = "0.1.0"
+dependencies = [
  "embed-resource",
  "native-windows-derive",
  "native-windows-gui",
  "winapi",
- "zoom-sdk-windows-sys",
+ "zoom-sdk",
 ]
 
 [[package]]
