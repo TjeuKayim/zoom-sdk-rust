@@ -61,11 +61,15 @@ fn main() -> Result<(), zoom_sdk::error::Error> {
     println!("Initialized");
     let mut auth = zoom.create_auth_service()?;
     auth.set_event(zoom_sdk::auth::AuthServiceEvent {
-        authentication_return: Box::new(|res| println!("auth ret {}", res)),
+        authentication_return: Box::new(|res| {
+            app.init_status(&format!("Authentication {:?}", res))
+        }),
         login_return: Box::new(|status| {
             println!("login status {:?}", status);
             if let zoom_sdk::auth::LoginStatus::Success(info) = status {
-                println!("name {}", info.get_display_name());
+                let name = info.get_display_name();
+                println!("name {}", name);
+                app.init_status(&format!("Logged in as {}", name));
             }
         }),
     })?;

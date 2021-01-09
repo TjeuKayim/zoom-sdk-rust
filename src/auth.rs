@@ -10,15 +10,15 @@ pub struct AuthService<'a> {
     /// This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
     #[allow(dead_code)]
-    events: Option<Box<AuthServiceEvent>>,
+    events: Option<Box<AuthServiceEvent<'a>>>,
     #[allow(dead_code)]
     sdk: &'a Sdk,
 }
 
-pub struct AuthServiceEvent {
+pub struct AuthServiceEvent<'a> {
     // TODO: Use generic type param instead of dyn here
-    pub authentication_return: Box<dyn FnMut(AuthResult)>,
-    pub login_return: Box<dyn FnMut(LoginStatus)>,
+    pub authentication_return: Box<dyn FnMut(AuthResult) + 'a>,
+    pub login_return: Box<dyn FnMut(LoginStatus) + 'a>,
 }
 
 impl Drop for AuthService<'_> {
@@ -29,7 +29,7 @@ impl Drop for AuthService<'_> {
     }
 }
 
-impl fmt::Debug for AuthServiceEvent {
+impl fmt::Debug for AuthServiceEvent<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("zoom_sdk::AuthServiceEvent").finish()
     }
@@ -81,7 +81,7 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(&mut self, events: AuthServiceEvent) -> ZoomResult<()> {
+    pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
         let mut events = Box::new(events);
         let callback_data = &mut *events as *mut AuthServiceEvent;
         self.events = Some(events);
