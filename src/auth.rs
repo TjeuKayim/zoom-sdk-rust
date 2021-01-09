@@ -17,6 +17,8 @@ pub struct AuthService<'a> {
 
 pub struct AuthServiceEvent<'a> {
     // TODO: Use generic type param instead of dyn here
+    //       or make this a trait.
+    // TODO: How to handle errors?
     pub authentication_return: Box<dyn FnMut(AuthResult) + 'a>,
     pub login_return: Box<dyn FnMut(LoginStatus) + 'a>,
 }
@@ -64,14 +66,14 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn login(&mut self) -> ZoomResult<()> {
-        let username = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_USER").unwrap());
-        let password = str_to_u16_vec(&std::env::var("ZOOM_LOGIN_PASS").unwrap());
+    pub fn login(&mut self, username: &str, password: &str, remember_me: bool) -> ZoomResult<()> {
+        let username = str_to_u16_vec(username);
+        let password = str_to_u16_vec(password);
         let param = ffi::ZOOMSDK_LoginParam {
             loginType: ffi::ZOOMSDK_LoginType_LoginType_Email,
             ut: ffi::ZOOMSDK_tagLoginParam__bindgen_ty_1 {
                 emailLogin: ffi::ZOOMSDK_tagLoginParam4Email {
-                    bRememberMe: true,
+                    bRememberMe: remember_me,
                     userName: username.as_ptr(),
                     password: password.as_ptr(),
                 },

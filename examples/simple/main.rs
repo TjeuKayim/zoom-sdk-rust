@@ -2,6 +2,7 @@ use native_windows_derive::NwgUi;
 use native_windows_gui as nwg;
 use nwg::NativeUi;
 use std::ptr;
+use std::sync::RwLock;
 use winapi::um::libloaderapi::GetModuleHandleA;
 
 #[derive(Default, NwgUi)]
@@ -45,11 +46,11 @@ impl BasicApp {
     }
 }
 
-fn main() -> Result<(), zoom_sdk::error::Error> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     nwg::init().expect("Failed to init Native Windows GUI");
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
-    let mut zoom = zoom_sdk::InitParam::new()
+    let zoom = zoom_sdk::InitParam::new()
         .branding_name(Some("MyBranding"))
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
         .ui_window_icon_big_id(2734)
@@ -59,21 +60,29 @@ fn main() -> Result<(), zoom_sdk::error::Error> {
         .enable_generate_dump(true)
         .init_sdk()?;
     println!("Initialized");
-    let mut auth = zoom.create_auth_service()?;
-    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
-        authentication_return: Box::new(|res| {
-            app.init_status(&format!("Authentication {:?}", res))
-        }),
-        login_return: Box::new(|status| {
-            println!("login status {:?}", status);
-            if let zoom_sdk::auth::LoginStatus::Success(info) = status {
-                let name = info.get_display_name();
-                println!("name {}", name);
-                app.init_status(&format!("Logged in as {}", name));
-            }
-        }),
-    })?;
-    auth.sdk_auth()?;
+    let mut meeting = zoom.create_meeting_service()?;
+    let auth = RwLock::new(zoom.create_auth_service()?);
+    auth.write()
+        .unwrap()
+        .set_event(zoom_sdk::auth::AuthServiceEvent {
+            authentication_return: Box::new(|res| {
+                app.init_status(&format!("Authentication {:?}", res));
+                println!("AuthResult {:?}", res);
+                let username = std::env::var("ZOOM_LOGIN_USER").unwrap();
+                let password = std::env::var("ZOOM_LOGIN_PASS").unwrap();
+                auth.write().unwrap().login(&username, &password, false);
+            }),
+            login_return: Box::new(|status| {
+                println!("login status {:?}", status);
+                if let zoom_sdk::auth::LoginStatus::Success(info) = status {
+                    let name = info.get_display_name();
+                    println!("name {}", name);
+                    app.init_status(&format!("Logged in as {}", name));
+                    meeting.handle_zoom_web_uri_protocol_action("");
+                }
+            }),
+        })?;
+    auth.write().unwrap().sdk_auth()?;
     println!("auth service created");
     nwg::dispatch_thread_events();
     Ok(())

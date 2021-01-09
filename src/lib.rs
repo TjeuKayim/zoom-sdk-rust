@@ -11,11 +11,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use winapi::shared::minwindef::HMODULE;
 use zoom_sdk_windows_sys as ffi;
 
-use auth::AuthService;
-use error::{Error, ErrorExt, ZoomResult};
-
 pub mod auth;
 pub mod error;
+pub mod meeting;
+
+use auth::AuthService;
+use error::{Error, ErrorExt, ZoomResult};
+use meeting::MeetingService;
 
 pub fn zoom_version() -> String {
     unsafe {
@@ -192,8 +194,12 @@ impl Sdk {
         r
     }
 
-    pub fn create_auth_service(&mut self) -> ZoomResult<AuthService> {
+    pub fn create_auth_service(&self) -> ZoomResult<AuthService> {
         AuthService::new(self)
+    }
+
+    pub fn create_meeting_service(&self) -> ZoomResult<MeetingService> {
+        MeetingService::new(self)
     }
 }
 

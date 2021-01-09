@@ -3,9 +3,9 @@
 #include <wtypes.h>
 #include <zoom_sdk.h>
 #include <auth_service_interface.h>
+#include <meeting_service_interface.h>
 
 namespace ZOOM_SDK_NAMESPACE {
-    extern "C" {
     InitParam InitParam_Default();
     LastErrorType IZoomLastError_GetErrorType(const IZoomLastError *self);
     UINT64 IZoomLastError_GetErrorCode(const IZoomLastError *self);
@@ -24,5 +24,6 @@ namespace ZOOM_SDK_NAMESPACE {
 
     const wchar_t* IAccountInfo_GetDisplayName(IAccountInfo *self);
     LoginType IAccountInfo_GetLoginType(IAccountInfo *self);
-    }
+
+    SDKError IMeetingsService_HandleZoomWebUriProtocolAction(IMeetingService *self, const wchar_t* protocol_action);
 }

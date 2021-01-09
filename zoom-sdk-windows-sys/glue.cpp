@@ -66,3 +66,7 @@ const wchar_t* ZOOM_SDK_NAMESPACE::IAccountInfo_GetDisplayName(IAccountInfo *sel
 LoginType ZOOM_SDK_NAMESPACE::IAccountInfo_GetLoginType(IAccountInfo *self) {
     return self->GetLoginType();
 }
+
+SDKError ZOOM_SDK_NAMESPACE::IMeetingsService_HandleZoomWebUriProtocolAction(IMeetingService *self, const wchar_t* protocol_action) {
+    return self->HandleZoomWebUriProtocolAction(protocol_action);
+}
