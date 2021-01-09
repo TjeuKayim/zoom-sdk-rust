@@ -61,28 +61,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init_sdk()?;
     println!("Initialized");
     let mut meeting = zoom.create_meeting_service()?;
-    let auth = RwLock::new(zoom.create_auth_service()?);
-    auth.write()
-        .unwrap()
-        .set_event(zoom_sdk::auth::AuthServiceEvent {
-            authentication_return: Box::new(|res| {
-                app.init_status(&format!("Authentication {:?}", res));
-                println!("AuthResult {:?}", res);
-                let username = std::env::var("ZOOM_LOGIN_USER").unwrap();
-                let password = std::env::var("ZOOM_LOGIN_PASS").unwrap();
-                auth.write().unwrap().login(&username, &password, false);
-            }),
-            login_return: Box::new(|status| {
-                println!("login status {:?}", status);
-                if let zoom_sdk::auth::LoginStatus::Success(info) = status {
-                    let name = info.get_display_name();
-                    println!("name {}", name);
-                    app.init_status(&format!("Logged in as {}", name));
-                    meeting.handle_zoom_web_uri_protocol_action("");
-                }
-            }),
-        })?;
-    auth.write().unwrap().sdk_auth()?;
+    let auth = zoom.create_auth_service()?;
+    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
+        authentication_return: Box::new(|res| {
+            app.init_status(&format!("Authentication {:?}", res));
+            println!("AuthResult {:?}", res);
+            let username = std::env::var("ZOOM_LOGIN_USER").unwrap();
+            let password = std::env::var("ZOOM_LOGIN_PASS").unwrap();
+            auth.login(&username, &password, false);
+        }),
+        login_return: Box::new(|status| {
+            println!("login status {:?}", status);
+            if let zoom_sdk::auth::LoginStatus::Success(info) = status {
+                let name = info.get_display_name();
+                println!("name {}", name);
+                app.init_status(&format!("Logged in as {}", name));
+                meeting.handle_zoom_web_uri_protocol_action("");
+            }
+        }),
+    })?;
+    auth.sdk_auth()?;
     println!("auth service created");
     nwg::dispatch_thread_events();
     Ok(())

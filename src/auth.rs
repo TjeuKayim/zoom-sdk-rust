@@ -3,6 +3,7 @@ use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
+use std::sync::Mutex;
 use std::{fmt, ptr};
 
 /// Authentication Service
@@ -10,7 +11,7 @@ pub struct AuthService<'a> {
     /// This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
     #[allow(dead_code)]
-    events: Option<Box<AuthServiceEvent<'a>>>,
+    events: Mutex<Option<Box<AuthServiceEvent<'a>>>>,
     #[allow(dead_code)]
     sdk: &'a Sdk,
 }
@@ -45,14 +46,14 @@ impl<'a> AuthService<'a> {
             Ok(AuthService {
                 inner,
                 sdk,
-                events: None,
+                events: Mutex::new(None),
             })
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
         }
     }
 
-    pub fn sdk_auth(&mut self) -> ZoomResult<()> {
+    pub fn sdk_auth(&self) -> ZoomResult<()> {
         let app_key = std::env::var("ZOOM_SDK_KEY").unwrap();
         let app_key = str_to_u16_vec(&app_key);
         let app_secret = std::env::var("ZOOM_SDK_SECRET").unwrap();
@@ -66,7 +67,7 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn login(&mut self, username: &str, password: &str, remember_me: bool) -> ZoomResult<()> {
+    pub fn login(&self, username: &str, password: &str, remember_me: bool) -> ZoomResult<()> {
         let username = str_to_u16_vec(username);
         let password = str_to_u16_vec(password);
         let param = ffi::ZOOMSDK_LoginParam {
@@ -83,10 +84,10 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
+    pub fn set_event(&self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
         let mut events = Box::new(events);
         let callback_data = &mut *events as *mut AuthServiceEvent;
-        self.events = Some(events);
+        *self.events.lock().unwrap() = Some(events);
         let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
             callbackData: callback_data as _,
             authenticationReturn: Some(on_authentication_return),
