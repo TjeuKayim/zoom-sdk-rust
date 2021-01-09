@@ -13,7 +13,6 @@ use zoom_sdk_windows_sys as ffi;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
-use winapi::um::winbase::InitAtomTable;
 
 pub mod auth;
 pub mod error;
@@ -188,7 +187,7 @@ impl Sdk {
     /// # Safety
     /// Must only be called once.
     unsafe fn clean_up_internal(&self) -> ZoomResult<()> {
-        let r = unsafe { ffi::ZOOMSDK_CleanUPSDK() }.err_wrap(true);
+        let r = ffi::ZOOMSDK_CleanUPSDK().err_wrap(true);
         INITIALIZED.store(false, Ordering::SeqCst);
         r
     }

@@ -60,6 +60,15 @@ fn main() -> Result<(), zoom_sdk::error::Error> {
         .init_sdk()?;
     println!("Initialized");
     let mut auth = zoom.create_auth_service()?;
+    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
+        authentication_return: Box::new(|res| println!("auth ret {}", res)),
+        login_return: Box::new(|status| {
+            println!("login status {:?}", status);
+            if let zoom_sdk::auth::LoginStatus::Success(info) = status {
+                println!("name {}", info.get_display_name());
+            }
+        }),
+    })?;
     auth.sdk_auth()?;
     println!("auth service created");
     nwg::dispatch_thread_events();

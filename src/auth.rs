@@ -1,7 +1,4 @@
-use crate::auth::AuthResult::AccountNotEnableSdk;
-use crate::{
-    ffi, str_to_u16_vec, u16_ptr_to_os_string, u16_to_string, Error, ErrorExt, Sdk, ZoomResult,
-};
+use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, Sdk, ZoomResult};
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::catch_unwind;
@@ -12,13 +9,16 @@ use std::{fmt, ptr};
 pub struct AuthService<'a> {
     /// This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    events: Box<Events>,
+    #[allow(dead_code)]
+    events: Option<Box<AuthServiceEvent>>,
+    #[allow(dead_code)]
     sdk: &'a Sdk,
 }
 
-struct Events {
-    authentication_return: Box<dyn FnMut(AuthResult)>,
-    login_return: Box<dyn FnMut(LoginStatus)>,
+pub struct AuthServiceEvent {
+    // TODO: Use generic type param instead of dyn here
+    pub authentication_return: Box<dyn FnMut(AuthResult)>,
+    pub login_return: Box<dyn FnMut(LoginStatus)>,
 }
 
 impl Drop for AuthService<'_> {
@@ -29,9 +29,9 @@ impl Drop for AuthService<'_> {
     }
 }
 
-impl fmt::Debug for AuthService<'_> {
+impl fmt::Debug for AuthServiceEvent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::AuthService").finish()
+        f.debug_struct("zoom_sdk::AuthServiceEvent").finish()
     }
 }
 
@@ -40,8 +40,11 @@ impl<'a> AuthService<'a> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            let events = set_event(inner)?;
-            Ok(AuthService { inner, events, sdk })
+            Ok(AuthService {
+                inner,
+                sdk,
+                events: None,
+            })
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
         }
@@ -77,31 +80,25 @@ impl<'a> AuthService<'a> {
         unsafe { ffi::ZOOMSDK_IAuthService_Login(self.inner.as_ptr(), param) }.err_wrap(true)?;
         Ok(())
     }
-}
 
-fn set_event(inner: NonNull<ffi::ZOOMSDK_IAuthService>) -> ZoomResult<Box<Events>> {
-    let events = Box::new(Events {
-        authentication_return: Box::new(|res| println!("auth ret {}", res)),
-        login_return: Box::new(|status| {
-            println!("login status {:?}", status);
-            if let LoginStatus::Success(info) = status {
-                println!("name {}", info.get_display_name());
-            }
-        }),
-    });
-    let callback_data = Box::into_raw(events);
-    let events = unsafe { Box::from_raw(callback_data) };
-    let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
-        callbackData: callback_data as _,
-        authenticationReturn: Some(on_authentication_return),
-        loginReturn: Some(on_login_return),
-    };
-    unsafe { ffi::ZOOMSDK_IAuthService_SetEvent(inner.as_ptr(), &c_event).err_wrap(true)? };
-    Ok(events)
+    pub fn set_event(&mut self, events: AuthServiceEvent) -> ZoomResult<()> {
+        let mut events = Box::new(events);
+        let callback_data = &mut *events as *mut AuthServiceEvent;
+        self.events = Some(events);
+        let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
+            callbackData: callback_data as _,
+            authenticationReturn: Some(on_authentication_return),
+            loginReturn: Some(on_login_return),
+        };
+        unsafe {
+            ffi::ZOOMSDK_IAuthService_SetEvent(self.inner.as_ptr(), &c_event).err_wrap(true)?
+        };
+        Ok(())
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
-enum AuthResult {
+pub enum AuthResult {
     /// Authentication is successful.
     Success,
     /// The key or secret to authenticate is empty.
@@ -205,7 +202,7 @@ impl<'a> AccountInfo<'a> {
 
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
-        let events = &mut *(data as *mut Events);
+        let events = &mut *(data as *mut AuthServiceEvent);
         (events.authentication_return)(map_auth_result(res));
     });
     // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
@@ -226,7 +223,7 @@ unsafe extern "C" fn on_login_return(
 ) {
     let lifetime = ();
     let _ = catch_unwind(|| {
-        let events = &mut *(data as *mut Events);
+        let events = &mut *(data as *mut AuthServiceEvent);
         let status = match ret {
             ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
             ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
