@@ -13,13 +13,13 @@ Status: **Work in progress, Unstable**
 1. Stick to the struct/function names from the [C++ SDK Reference] as much as possible
    (converted function names to `snake_case`)
 1. Use `Drop` trait for RAII pattern
-1. Immutable callbacks for events
 
 [C++ SDK Reference]: https://marketplace.zoom.us/docs/sdk/native-sdks/windows/sdk-reference
 
 Features:
 
-- [ ] Initialize and cleanup SDK
+- [x] Initialize and cleanup SDK
+- [x] Join meeting with web URI
 
 ## Disclaimer
 
