@@ -1,3 +1,12 @@
+//! Status: **Work in progress, Unstable**
+//!
+//! FFI bindings to [Zoom Windows Software Development Kit](https://github.com/zoom/zoom-sdk-windows)
+//! generated with bindgen.
+//!
+//! Also contains C++ glue code for the virtual methods.
+//!
+//! See also the official [C++ SDK reference](https://marketplacefront.zoom.us/sdk/meeting/windows/files.html)
+
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
