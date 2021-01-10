@@ -2,6 +2,14 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_file = out_path.join("bindings.rs");
+    if let Ok(_) = std::env::var("DOCS_RS") {
+        // use bundled bindings because docs.rs can't run MSVC
+        std::fs::copy("bindgen_bundled.rs", out_file)
+            .expect("Could not copy bindings to output directory");
+        return;
+    }
     let env_var = "ZOOM_SDK_DIR";
     let sdk_dir = env::var(env_var).expect("Environment variable ZOOM_SDK_DIR not set");
     println!("cargo:rerun-if-env-changed={}", env_var);
@@ -37,8 +45,7 @@ fn main() {
         .expect("Unable to generate bindings");
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     bindings
-        .write_to_file(out_path.join("bindings.rs"))
+        .write_to_file(out_file)
         .expect("Couldn't write bindings!");
 }
