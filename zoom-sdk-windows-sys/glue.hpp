@@ -18,7 +18,26 @@ namespace ZOOM_SDK_NAMESPACE {
         void (*authenticationReturn)(void *, AuthResult);
         void (*loginReturn)(void *, LOGINSTATUS, IAccountInfo*);
     };
-    SDKError IAuthService_SetEvent(IAuthService *self, const CAuthServiceEvent *event);
+    class AuthServiceEvent : public IAuthServiceEvent {
+    public:
+        CAuthServiceEvent event;
+
+        void onAuthenticationReturn(AuthResult ret) {
+            event.authenticationReturn(event.callbackData, ret);
+        }
+
+        void onLoginRet(LOGINSTATUS ret, IAccountInfo *pAccountInfo) {
+            event.loginReturn(event.callbackData, ret, pAccountInfo);
+        }
+
+        void onLogout() {}
+
+        void onZoomIdentityExpired() {}
+
+        void onZoomAuthIdentityExpired() {}
+    };
+    void AuthServiceEvent_New(AuthServiceEvent *out);
+    SDKError IAuthService_SetEvent(IAuthService *self, IAuthServiceEvent *event);
     SDKError IAuthService_SDKAuthParam(IAuthService *self, AuthParam param);
     SDKError IAuthService_Login(IAuthService *self, LoginParam param);
 

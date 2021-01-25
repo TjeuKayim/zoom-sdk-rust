@@ -1,7 +1,4 @@
-use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, Sdk, ZoomResult};
-use std::ffi::c_void;
-use std::marker::PhantomData;
-use std::panic::catch_unwind;
+use crate::{ffi, str_to_u16_vec, Error, ErrorExt, Sdk, ZoomResult};
 use std::ptr::NonNull;
 use std::{fmt, ptr};
 

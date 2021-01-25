@@ -1,9 +1,9 @@
-use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, Sdk, ZoomResult};
+use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, ZoomResult};
 use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
-use std::{fmt, ptr};
+use std::{fmt, mem, ptr};
 
 /// Authentication Service
 pub struct AuthService<'a> {
@@ -17,8 +17,8 @@ enum Data<'a> {
         events: Option<Box<AuthService<'a>>>,
     },
     Inline {
-        #[allow(dead_code)]
         events: AuthServiceEvent<'a>,
+        object: ffi::ZOOMSDK_AuthServiceEvent,
     },
 }
 
@@ -90,29 +90,44 @@ impl<'a> AuthService<'a> {
     }
 
     pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        let callback_data = match &mut self.data {
-            Data::Inline { events: e } => {
+        match &mut self.data {
+            Data::Inline { events: e, .. } => {
                 *e = events;
-                self as *mut AuthService
+                new_object(self)?;
             }
             Data::Boxed { events: e } => {
                 let mut b = Box::new(AuthService {
                     inner: self.inner,
-                    data: Data::Inline { events },
+                    data: Data::Inline {
+                        events,
+                        object: unsafe { mem::zeroed() },
+                    },
                 });
-                let p = &mut *b as *mut AuthService;
+                new_object(&mut *b)?;
                 *e = Some(b);
-                p
             }
         };
-        let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
-            callbackData: callback_data as _,
-            authenticationReturn: Some(on_authentication_return),
-            loginReturn: Some(on_login_return),
-        };
-        unsafe {
-            ffi::ZOOMSDK_IAuthService_SetEvent(self.inner.as_ptr(), &c_event).err_wrap(true)?
-        };
+        fn new_object(callback_data: &mut AuthService) -> ZoomResult<()> {
+            let callback_data_p = callback_data as *mut _ as *mut c_void;
+            if let Data::Inline { object, .. } = &mut callback_data.data {
+                unsafe {
+                    ffi::ZOOMSDK_AuthServiceEvent_New(object);
+                    object.event = ffi::ZOOMSDK_CAuthServiceEvent {
+                        callbackData: callback_data_p,
+                        authenticationReturn: Some(on_authentication_return),
+                        loginReturn: Some(on_login_return),
+                    };
+                    ffi::ZOOMSDK_IAuthService_SetEvent(
+                        callback_data.inner.as_ptr(),
+                        &mut object._base,
+                    )
+                    .err_wrap(true)?;
+                }
+            } else {
+                panic!("not inline");
+            };
+            Ok(())
+        }
         Ok(())
     }
 }
@@ -223,7 +238,7 @@ impl<'a> AccountInfo<'a> {
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
         let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &service.data {
+        if let Data::Inline { events, .. } = &service.data {
             (events.authentication_return)(service, map_auth_result(res));
         }
     });
@@ -255,7 +270,7 @@ unsafe extern "C" fn on_login_return(
             _ => LoginStatus::Unmapped(ret),
         };
         let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &service.data {
+        if let Data::Inline { events, .. } = &service.data {
             (events.login_return)(service, status);
         }
     });

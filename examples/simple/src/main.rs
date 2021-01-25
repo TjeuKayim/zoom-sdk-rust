@@ -2,9 +2,7 @@ use native_windows_derive::NwgUi;
 use native_windows_gui as nwg;
 use nwg::NativeUi;
 use std::ptr;
-use std::sync::RwLock;
 use winapi::um::libloaderapi::GetModuleHandleA;
-use zoom_sdk::error::ZoomResult;
 
 #[derive(Default, NwgUi)]
 pub struct BasicApp {
@@ -72,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_generate_dump(true)
         .init_sdk()?;
     println!("Initialized");
-    let mut meeting = zoom.create_meeting_service()?;
+    let meeting = zoom.create_meeting_service()?;
     let mut auth = zoom.create_auth_service()?;
     auth.set_event(zoom_sdk::auth::AuthServiceEvent {
         authentication_return: Box::new(|auth, res| {
@@ -85,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(())
             });
         }),
-        login_return: Box::new(|auth, status| {
+        login_return: Box::new(|_auth, status| {
             app.catch_error(|| {
                 println!("login status {:?}", status);
                 if let zoom_sdk::auth::LoginStatus::Success(info) = status {

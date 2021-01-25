@@ -19,32 +19,12 @@ void StringDrop(wchar_t *string) {
     delete string;
 }
 
-class AuthServiceEvent : public IAuthServiceEvent {
-public:
-    CAuthServiceEvent event;
+void ZOOM_SDK_NAMESPACE::AuthServiceEvent_New(AuthServiceEvent *out) {
+    new (out) AuthServiceEvent;
+}
 
-    void onAuthenticationReturn(AuthResult ret) {
-        event.authenticationReturn(event.callbackData, ret);
-    }
-
-    void onLoginRet(LOGINSTATUS ret, IAccountInfo *pAccountInfo) {
-        event.loginReturn(event.callbackData, ret, pAccountInfo);
-    }
-
-    void onLogout() {}
-
-    void onZoomIdentityExpired() {}
-
-    void onZoomAuthIdentityExpired() {}
-};
-
-SDKError ZOOM_SDK_NAMESPACE::IAuthService_SetEvent(IAuthService *self, const CAuthServiceEvent *event) {
-    if (!event->authenticationReturn || !event->loginReturn) {
-        return SDKERR_INVALID_PARAMETER;
-    }
-    auto wrap = new AuthServiceEvent; // TODO: free memory
-    wrap->event = *event;
-    return self->SetEvent(wrap);
+SDKError ZOOM_SDK_NAMESPACE::IAuthService_SetEvent(IAuthService *self, IAuthServiceEvent *event) {
+    return self->SetEvent(event);
 }
 
 SDKError ZOOM_SDK_NAMESPACE::IAuthService_SDKAuthParam(IAuthService *self, AuthParam param) {
