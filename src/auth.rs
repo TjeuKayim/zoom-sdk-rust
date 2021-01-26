@@ -26,8 +26,8 @@ pub struct AuthServiceEvent<'a> {
     // TODO: Use generic type param instead of dyn here
     //       or make this a trait.
     // TODO: How to handle errors?
-    pub authentication_return: Box<dyn Fn(&AuthService, AuthResult) + 'a>,
-    pub login_return: Box<dyn Fn(&AuthService, LoginStatus) + 'a>,
+    pub authentication_return: Box<dyn FnMut(&AuthService, AuthResult) + 'a>,
+    pub login_return: Box<dyn FnMut(&AuthService, LoginStatus) + 'a>,
 }
 
 impl Drop for AuthService<'_> {
@@ -237,10 +237,9 @@ impl<'a> AccountInfo<'a> {
 
 unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
     let _ = catch_unwind(|| {
-        let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events, .. } = &service.data {
+        events_callback(data, |events, service| {
             (events.authentication_return)(service, map_auth_result(res));
-        }
+        });
     });
     // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
     //     let mut meeting_service = ptr::null_mut();
@@ -260,23 +259,35 @@ unsafe extern "C" fn on_login_return(
 ) {
     let lifetime = ();
     let _ = catch_unwind(|| {
-        let status = match ret {
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS => {
-                LoginStatus::Success(AccountInfo::new(info, &lifetime))
-            }
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
-            _ => LoginStatus::Unmapped(ret),
-        };
-        let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events, .. } = &service.data {
+        events_callback(data, |events, service| {
+            let status = match ret {
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS => {
+                    LoginStatus::Success(AccountInfo::new(info, &lifetime))
+                }
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
+                _ => LoginStatus::Unmapped(ret),
+            };
             (events.login_return)(service, status);
-        }
+        });
     });
     // dbg!(ret);
     // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
     //     invoke_init_status_callback("Logged in");
     //     let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
     //     dbg!(u16_ptr_to_os_string(display_name));
+}
+
+unsafe fn events_callback(
+    data: *mut c_void,
+    mut f: impl FnMut(&mut AuthServiceEvent, &mut AuthService),
+) {
+    let service = &mut *(data as *mut AuthService);
+    let mut tmp_data = Data::Boxed { events: None };
+    mem::swap(&mut service.data, &mut tmp_data);
+    if let Data::Inline { events, .. } = &mut tmp_data {
+        f(events, service);
+    }
+    mem::swap(&mut service.data, &mut tmp_data);
 }
