@@ -14,6 +14,7 @@ pub struct AuthService<'a> {
 
 enum Data<'a> {
     Boxed {
+        // TODO: Consider using std::pin
         events: Option<Box<AuthService<'a>>>,
     },
     Inline {
@@ -92,6 +93,7 @@ impl<'a> AuthService<'a> {
     pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
         match &mut self.data {
             Data::Inline { events: e, .. } => {
+                // TODO: This arm is probably never called, change types to statically verify that
                 *e = events;
                 new_object(self)?;
             }
@@ -112,7 +114,11 @@ impl<'a> AuthService<'a> {
             if let Data::Inline { object, .. } = &mut callback_data.data {
                 unsafe {
                     ffi::ZOOMSDK_AuthServiceEvent_New(object);
+                    // TODO: Refactor with a wrapper C++ object that uses Rust exported functions
+                    //       instead of function pointers.
                     object.event = ffi::ZOOMSDK_CAuthServiceEvent {
+                        // TODO: Callback data is unnecessary if repr(C) is used for fixed offset
+                        //       to wrapping struct (using it as first field).
                         callbackData: callback_data_p,
                         authenticationReturn: Some(on_authentication_return),
                         loginReturn: Some(on_login_return),
@@ -241,15 +247,6 @@ unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMS
             (events.authentication_return)(service, map_auth_result(res));
         });
     });
-    // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
-    //     let mut meeting_service = ptr::null_mut();
-    //     let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
-    //     dbg!(err);
-    //
-    //     invoke_init_status_callback("SDK Authenticated");
-    // } else {
-    //     invoke_init_status_callback("SDK Authentication failed");
-    // }
 }
 
 unsafe extern "C" fn on_login_return(
@@ -272,11 +269,6 @@ unsafe extern "C" fn on_login_return(
             (events.login_return)(service, status);
         });
     });
-    // dbg!(ret);
-    // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
-    //     invoke_init_status_callback("Logged in");
-    //     let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
-    //     dbg!(u16_ptr_to_os_string(display_name));
 }
 
 unsafe fn events_callback(
