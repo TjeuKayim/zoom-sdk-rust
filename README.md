@@ -17,14 +17,6 @@ Status: **Work in progress, Unstable**
 
 [C++ SDK Reference]: https://marketplace.zoom.us/docs/sdk/native-sdks/windows/sdk-reference
 
-## Roadmap
-
-In March, I plan to release a beta version that is usable
-but doesn't cover all the Zoom features.
-
-I'm not going to implement wrappers that I don't need for my own use case,
-unless someone requests those features via a Github issue.
-
 Features:
 
 - [ ] Initialize and cleanup SDK
