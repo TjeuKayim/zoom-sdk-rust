@@ -42,21 +42,19 @@ fn main() {
         .collect::<Vec<_>>();
 
     for namespace in namespaces {
-        if let Some(file) = namespace
-            .get_location()
-            .and_then(|l| l.get_file_location().file)
-        {
-            if file.get_path().ends_with("auth_service_interface.h") {
-                println!(
-                    "Kind {:?}, Name: {:?}, Loc: {:?}",
-                    &namespace.get_kind(),
-                    &namespace.get_display_name(),
-                    &namespace.get_location(),
-                );
-                // dbg!(namespace.get_children());
-                visit_namespace(&namespace);
-            }
-        }
+        // if let Some(file) = namespace
+        //     .get_location()
+        //     .and_then(|l| l.get_file_location().file)
+        // {
+        //     if file.get_path().ends_with("auth_service_interface.h") {
+        println!(
+            "Kind {:?}, Name: {:?}, Loc: {:?}",
+            &namespace.get_kind(),
+            &namespace.get_display_name(),
+            &namespace.get_location(),
+        );
+        // dbg!(namespace.get_children());
+        visit_namespace(&namespace);
         // dbg!(&class);
     }
 }
@@ -87,6 +85,10 @@ fn visit_class(class: Entity, children: Vec<Entity>) {
             EntityKind::Method => {}
             EntityKind::AccessSpecifier => continue,
             EntityKind::Destructor => continue,
+            EntityKind::BaseSpecifier => continue,
+            EntityKind::EnumDecl => continue,
+            EntityKind::Constructor => continue,
+            EntityKind::FieldDecl => continue,
             _ => panic!("Unexpected kind {:?}", &member),
         };
         if !member.is_virtual_method() {
@@ -133,6 +135,7 @@ fn visit_class(class: Entity, children: Vec<Entity>) {
         write!(&mut definition, ");\n}}");
         println!("{}", declaration);
         println!("{}", definition);
+        // TODO: Generate Delete / Destructor
     }
 }
 
