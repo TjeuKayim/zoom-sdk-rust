@@ -5,7 +5,7 @@
 #include <auth_service_interface.h>
 #include <meeting_service_interface.h>
 
-namespace ZOOM_SDK_NAMESPACE {
+namespace ZOOMSDK {
     InitParam InitParam_Default();
     LastErrorType IZoomLastError_GetErrorType(const IZoomLastError *self);
     UINT64 IZoomLastError_GetErrorCode(const IZoomLastError *self);
@@ -35,6 +35,8 @@ namespace ZOOM_SDK_NAMESPACE {
         void onZoomIdentityExpired() {}
 
         void onZoomAuthIdentityExpired() {}
+
+        void onLoginReturnWithReason(LOGINSTATUS status,IAccountInfo *account, LoginFailReason reason) {}
     };
     void AuthServiceEvent_New(AuthServiceEvent *out);
     SDKError IAuthService_SetEvent(IAuthService *self, IAuthServiceEvent *event);

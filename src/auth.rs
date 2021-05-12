@@ -6,12 +6,14 @@ use std::ptr::NonNull;
 use std::{fmt, mem, ptr};
 
 /// Authentication Service
+#[derive(Debug)]
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
     data: Data<'a>,
 }
 
+#[derive(Debug)]
 enum Data<'a> {
     Boxed {
         // TODO: Consider using std::pin

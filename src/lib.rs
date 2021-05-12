@@ -21,7 +21,7 @@ use meeting::MeetingService;
 
 pub fn zoom_version() -> String {
     unsafe {
-        let version = ffi::ZOOMSDK_GetVersion();
+        let version = ffi::ZOOMSDK_GetSDKVersion();
         let version = u16_ptr_to_os_string(version);
         version.into_string().unwrap()
     }
@@ -276,12 +276,11 @@ fn str_to_u16_vec(s: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::exit;
 
     #[test]
     fn zoom_version_equals() {
         let version = zoom_version();
-        assert_eq!("5.4.3 (54524.1229)", &version);
+        assert_eq!("5.5.1 (12511.0422)", &version);
     }
 
     #[test]
@@ -300,7 +299,7 @@ mod tests {
         // STATUS_ACCESS_VIOLATION was thrown.
         // So it might not be intended to run init multiple times.
         // Since version 5.4.3 this was fixed.
-        let mut sdk1 = InitParam::new().init_sdk().unwrap();
+        let sdk1 = InitParam::new().init_sdk().unwrap();
         sdk1.create_auth_service().unwrap();
         let err = InitParam::new().init_sdk().unwrap_err();
         assert_eq!(
@@ -308,7 +307,7 @@ mod tests {
             r#"zoom_sdk::Error { type: Rust, message: "Only one Sdk can exist at a time" }"#
         );
         sdk1.clean_up().unwrap();
-        let mut sdk2 = InitParam::new().init_sdk().unwrap();
+        let sdk2 = InitParam::new().init_sdk().unwrap();
         sdk2.create_auth_service().unwrap();
         unsafe { sdk2.clean_up_internal().unwrap() };
         sdk2.create_auth_service().unwrap_err();
