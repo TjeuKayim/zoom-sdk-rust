@@ -36,6 +36,8 @@ fn main() {
         hpp_output: File::create(out_path.join("generated.hpp")).unwrap(),
         cpp_output: File::create(out_path.join("generated.cpp")).unwrap(),
     };
+    let notice = "// Programmatically generated, do not edit by hand";
+    generator.write_output(notice, notice);
     generator.visit_unit(&tu);
 }
 
@@ -132,8 +134,15 @@ impl GlueGenerator {
             let mut definition = signature.clone();
             write!(&mut signature, ");").unwrap();
             // declaration
-
-            let declaration = signature;
+            let declaration = if let Some(comment) = member.get_comment() {
+                let comment: String = comment
+                    .split_terminator("\n")
+                    .map(|l| l.trim_start())
+                    .collect();
+                format!("{}\n{}", comment, signature)
+            } else {
+                signature
+            };
             // function body
             write!(&mut definition, ") {{\n    return self->{}(", cpp_name).unwrap();
             let mut arg_separator = "";
