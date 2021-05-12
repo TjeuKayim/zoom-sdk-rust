@@ -15,6 +15,7 @@ keywords = ["zoom", "video", "conferencing"]
 members = [
     "zoom-sdk-windows-sys",
     "examples/simple",
+    "glue-generator",
 ]
 
 [dependencies]
