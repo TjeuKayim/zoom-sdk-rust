@@ -1,6 +1,8 @@
 use clang::*;
 use std::env;
+use std::fmt::Write;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 fn main() {
     // cargo run --package glue-generator --bin glue-generator --target x86_64-pc-windows-msvc
@@ -9,9 +11,11 @@ fn main() {
 
     let env_var = "ZOOM_SDK_DIR";
     let sdk_dir = env::var(env_var).expect("Environment variable ZOOM_SDK_DIR not set");
-    // let mut header_path = PathBuf::from(sdk_dir);
-    // header_path.push("h/auth_service_interface.h");
-    let header_path = r#"C:\Users\tjeuk\src\zoom-sdk-rust\zoom-sdk-windows-sys\wrapper.hpp"#;
+    let mut header_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    header_path.push(r#"..\zoom-sdk-windows-sys\prelude.hpp"#);
+    dbg!(&header_path);
+    let header_path = header_path.canonicalize().unwrap();
+    dbg!(&header_path);
 
     let tu = index.parser(&header_path)
         .arguments(&[
@@ -31,7 +35,10 @@ fn main() {
         .get_entity()
         .get_children()
         .into_iter()
-        .filter(|e| e.get_kind() == EntityKind::Namespace)
+        .filter(|e| {
+            e.get_kind() == EntityKind::Namespace
+                && e.get_name().map(|n| &n == "ZOOMSDK").unwrap_or(false)
+        })
         .collect::<Vec<_>>();
 
     for namespace in namespaces {
@@ -60,22 +67,91 @@ fn visit_namespace(namespace: &Entity) {
         .into_iter()
         .filter(|e| e.get_kind() == EntityKind::ClassDecl);
     for class in classes {
-        let name = class.get_name().unwrap();
-        // dbg!(class.get_name());
-        // dbg!(class.get_mangled_name());
-        // dbg!(class.get_comment());
-        // dbg!(class.get_comment_brief());
-        // dbg!(class.get_parsed_comment());
-        // dbg!(class.get_comment_range());
-        let comment = class.get_comment_brief().unwrap();
+        let children = class.get_children();
+        if children.len() == 0 {
+            continue;
+        }
+        visit_class(class, children)
     }
 }
 
-fn visit_method(method: &Entity) {
-    dbg!(method.get_arguments());
-    dbg!(method.is_const_method());
-    dbg!(method.is_virtual_method());
-    // dbg!(method.dest());
-    // TODO: is destructor
-    dbg!(method.get_result_type());
+fn visit_class(class: Entity, children: Vec<Entity>) {
+    let class_name = class.get_name().unwrap();
+    println!("Visit class {}", class_name);
+    let mut names_seen = Vec::with_capacity(children.len());
+    // dbg!(class.get_comment());
+    // let comment = class.get_comment_brief().unwrap();
+    for member in children {
+        // dbg!(&member);
+        match member.get_kind() {
+            EntityKind::Method => {}
+            EntityKind::AccessSpecifier => continue,
+            EntityKind::Destructor => continue,
+            _ => panic!("Unexpected kind {:?}", &member),
+        };
+        if !member.is_virtual_method() {
+            eprintln!("Not virtual {:?}", &member);
+            continue;
+        }
+        let (cpp_name, glue_name) = rename(member.get_name().unwrap(), &mut names_seen);
+
+        // dbg!(member.get_arguments());
+        // dbg!(member.is_const_method());
+        // dbg!(member.get_result_type());
+
+        let mut signature = format!(
+            "{}{} ZoomSdkGlue_{}_{}({2} *self",
+            if member.is_const_method() {
+                "const "
+            } else {
+                ""
+            },
+            member.get_result_type().unwrap().get_display_name(),
+            &class_name,
+            &glue_name,
+        );
+        let arguments = member.get_arguments().unwrap();
+        for arg in &arguments {
+            let typ = arg.get_type().unwrap().get_display_name();
+            write!(&mut signature, ", {} {}", typ, arg.get_name().unwrap());
+        }
+        let mut definition = signature.clone();
+        write!(&mut signature, ");");
+        let declaration = signature;
+        // function body
+        write!(&mut definition, ") {{\n    return self->{}(", cpp_name);
+        let mut arg_separator = "";
+        for arg in &arguments {
+            write!(
+                &mut definition,
+                "{}{}",
+                arg_separator,
+                arg.get_name().unwrap()
+            );
+            arg_separator = ", ";
+        }
+        write!(&mut definition, ");\n}}");
+        println!("{}", declaration);
+        println!("{}", definition);
+    }
+}
+
+// struct NameMap {
+//     rust: String,
+//     cpp: String,
+// }
+
+fn visit_class_member(class_name: &str, member: &Entity) {}
+
+fn rename(name: String, names_seen: &mut Vec<Rc<String>>) -> (Rc<String>, Rc<String>) {
+    let mut name = Rc::new(name);
+    names_seen.push(name.clone());
+    let cpp_name = name.clone();
+    let times_seen = names_seen.into_iter().filter(|n| **n == name).count();
+    if times_seen > 0 {
+        let mut clone = (*name).clone();
+        write!(&mut clone, "{}", times_seen).unwrap();
+        name = Rc::new(clone);
+    }
+    return (cpp_name, name);
 }
