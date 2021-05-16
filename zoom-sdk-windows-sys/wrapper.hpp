@@ -1,4 +1,4 @@
 #include "prelude.hpp"
 
-// Virtual Method Wrappers
 #include "glue.hpp"
+#include "generated.hpp"

@@ -32,12 +32,21 @@ fn main() {
         .parse().unwrap();
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let prelude_file_name = "prelude.hpp";
+    let hpp_file_name = "generated.hpp";
+    let cpp_file_name = "generated.cpp";
     let mut generator = GlueGenerator {
-        hpp_output: File::create(out_path.join("generated.hpp")).unwrap(),
-        cpp_output: File::create(out_path.join("generated.cpp")).unwrap(),
+        hpp_output: File::create(out_path.join(hpp_file_name)).unwrap(),
+        cpp_output: File::create(out_path.join(cpp_file_name)).unwrap(),
     };
     let notice = "// Programmatically generated, do not edit by hand";
-    generator.write_output(notice, notice);
+    generator.write_output(
+        &format!(
+            "{}\r\n#pragma once\r\n#include \"{}\"\r\nusing namespace ZOOMSDK;\r\n",
+            notice, prelude_file_name
+        ),
+        &format!("{}\r\n#include \"{}\"\r\n", notice, hpp_file_name),
+    );
     generator.visit_unit(&tu);
 }
 
@@ -115,16 +124,17 @@ impl GlueGenerator {
             let (cpp_name, glue_name) =
                 rename_overloads(member.get_name().unwrap(), &mut names_seen);
 
+            let const_qualifier = if member.is_const_method() {
+                "const "
+            } else {
+                ""
+            };
             let mut signature = format!(
-                "{}{} ZoomSdkGlue_{}_{}({2} *self",
-                if member.is_const_method() {
-                    "const "
-                } else {
-                    ""
-                },
+                "{} ZoomGlue_{}_{}({} ZOOMSDK::{1} *self",
                 member.get_result_type().unwrap().get_display_name(),
                 &class_name,
                 &glue_name,
+                const_qualifier,
             );
             let arguments = member.get_arguments().unwrap();
             for arg in &arguments {
@@ -136,15 +146,15 @@ impl GlueGenerator {
             // declaration
             let declaration = if let Some(comment) = member.get_comment() {
                 let comment: String = comment
-                    .split_terminator("\n")
+                    .split_terminator("\r\n")
                     .map(|l| l.trim_start())
                     .collect();
-                format!("{}\n{}", comment, signature)
+                format!("{}\r\n{}", comment, signature)
             } else {
                 signature
             };
             // function body
-            write!(&mut definition, ") {{\n    return self->{}(", cpp_name).unwrap();
+            write!(&mut definition, ") {{\r\n    return self->{}(", cpp_name).unwrap();
             let mut arg_separator = "";
             for arg in &arguments {
                 write!(
@@ -156,9 +166,9 @@ impl GlueGenerator {
                 .unwrap();
                 arg_separator = ", ";
             }
-            write!(&mut definition, ");\n}}").unwrap();
-            println!("{}", declaration);
-            println!("{}", definition);
+            write!(&mut definition, ");\r\n}}").unwrap();
+            // println!("{}", declaration);
+            // println!("{}", definition);
             self.write_output(&declaration, &mut definition);
         }
         // TODO: Generate Delete / Destructor
@@ -176,7 +186,7 @@ fn rename_overloads(name: String, names_seen: &mut Vec<Rc<String>>) -> (Rc<Strin
     let mut name = Rc::new(name);
     names_seen.push(name.clone());
     let cpp_name = name.clone();
-    let times_seen = names_seen.into_iter().filter(|n| **n == name).count();
+    let times_seen = names_seen.into_iter().filter(|n| **n == name).count() - 1;
     if times_seen > 0 {
         let mut clone = (*name).clone();
         write!(&mut clone, "{}", times_seen).unwrap();

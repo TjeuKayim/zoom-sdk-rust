@@ -18,11 +18,14 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper.hpp");
     println!("cargo:rerun-if-changed=glue.hpp");
     println!("cargo:rerun-if-changed=glue.cpp");
+    println!("cargo:rerun-if-changed=generated.cpp");
+    println!("cargo:rerun-if-changed=generated.cpp");
 
     cc::Build::new()
         .cpp(true)
         .include(&format!("{}\\h", sdk_dir))
         .file("glue.cpp")
+        .file("generated.cpp")
         .compile("wrap.a");
 
     let bindings = bindgen::Builder::default()
