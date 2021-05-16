@@ -43,7 +43,7 @@ impl InitParam {
     /// Creates default builder for InitParam.
     pub fn new() -> Self {
         let param = Self {
-            param: unsafe { ffi::ZOOMSDK_InitParam_Default() },
+            param: unsafe { ffi::ZoomGlue_InitParam_DefaultValue() },
             // string_cache: StringCache(Vec::new()),
             web_domain: None,
             branding_name: None,

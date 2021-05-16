@@ -87,9 +87,9 @@ impl GlueGenerator {
     }
 
     fn visit_namespace(&mut self, namespace: &Entity) {
-        let classes = namespace
-            .get_children()
-            .into_iter()
+        let children = namespace.get_children();
+        let classes = children
+            .iter()
             .filter(|e| e.get_kind() == EntityKind::ClassDecl);
         for class in classes {
             let children = class.get_children();
@@ -98,9 +98,25 @@ impl GlueGenerator {
             }
             self.visit_class(class, children)
         }
+        // Generate New / Default for structs
+        let structs = children
+            .iter()
+            .enumerate()
+            .filter(|e| e.1.get_kind() == EntityKind::StructDecl);
+        for (i, struct_e) in structs {
+            if !struct_e.get_name().unwrap_or("".into()).starts_with("tag") {
+                continue;
+            }
+            let typedef = children.get(i + 1).unwrap();
+            if typedef.get_kind() != EntityKind::TypedefDecl {
+                continue;
+            }
+            let struct_name = typedef.get_name().unwrap();
+            self.generate_default_value(&struct_name, &format!("ZOOMSDK::{}", &struct_name));
+        }
     }
 
-    fn visit_class(&mut self, class: Entity, children: Vec<Entity>) {
+    fn visit_class(&mut self, class: &Entity, children: Vec<Entity>) {
         use std::fmt::Write;
 
         let class_name = class.get_name().unwrap();
@@ -160,11 +176,16 @@ impl GlueGenerator {
             write!(&mut signature, ");").unwrap();
             // declaration
             let declaration = if let Some(comment) = member.get_comment() {
-                let comment: String = comment
-                    .split_terminator("\r\n")
-                    .map(|l| l.trim_start())
-                    .collect();
-                format!("{}\r\n{}", comment, signature)
+                // TODO: enable this again, causes LexError
+                // let mut comment: String = comment
+                //     .lines()
+                //     .map(|l| format!("{}\r\n", l.trim_start()))
+                //     .collect();
+                // if !comment.ends_with("\r\n") {
+                //     comment.push_str("\r\n");
+                // }
+                let comment = String::new();
+                format!("{}{}", comment, signature)
             } else {
                 signature
             };
@@ -216,14 +237,28 @@ impl GlueGenerator {
             }
         }
         if let Some(ev) = &mut event_implementation {
-            let impl_name = &class_name[1..];
+            let impl_name = format!("ZoomGlue_{}", &class_name[1..]);
             self.write_hpp(&format!(
-                "/// \\brief Generated interface implementation for callbacks\r\nclass ZoomGlue_{}: public {} {{\r\npublic:\r\n{}{}}};",
-                impl_name, class_name, &ev.fields, &ev.methods
+                "/// \\brief Generated interface implementation for callbacks.\r\nclass {}: public {} {{\r\npublic:\r\n{}{}}};",
+                &impl_name, class_name, &ev.fields, &ev.methods
             ));
+            self.generate_placement_new(&impl_name);
         }
-        // TODO: Generate New / Default
         // TODO: Generate Delete / Destructor
+    }
+
+    fn generate_placement_new(&mut self, class_name: &str) {
+        let signature = format!("void {0}_PlacementNew({0} *out)", class_name);
+        let declaration = format!("{};", signature);
+        let definition = format!("{} {{\r\n  new (out) {};\r\n}}", signature, class_name);
+        self.write_output(&declaration, &definition);
+    }
+
+    fn generate_default_value(&mut self, short_name: &str, class_name: &str) {
+        let signature = format!("{} ZoomGlue_{}_DefaultValue()", class_name, short_name);
+        let declaration = format!("{};", signature);
+        let definition = format!("{} {{\r\n  {} x; return x;\r\n}}", signature, class_name);
+        self.write_output(&declaration, &definition);
     }
 
     fn write_output(&mut self, declaration: &str, definition: &str) {
