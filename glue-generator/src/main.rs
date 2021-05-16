@@ -1,4 +1,5 @@
 use clang::*;
+use regex::Regex;
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;
@@ -105,6 +106,22 @@ impl GlueGenerator {
         let class_name = class.get_name().unwrap();
         println!("Visit class {}", class_name);
         let mut names_seen = Vec::with_capacity(children.len());
+        // Event classes have extra glue generation
+        lazy_static::lazy_static! {
+            static ref EVENT_INTERFACE: Regex = Regex::new("I.*Event").unwrap();
+            static ref STARTS_WITH_ON: Regex = Regex::new("^(on|On).*").unwrap();
+        }
+        let mut event_implementation = if EVENT_INTERFACE.is_match(&class_name)
+            && children
+                .get(1)
+                .and_then(|c| c.get_name())
+                .map_or(false, |c| STARTS_WITH_ON.is_match(&c))
+        {
+            Some(EventImplementation::default())
+        } else {
+            None
+        };
+
         for member in children {
             // dbg!(&member);
             match member.get_kind() {
@@ -129,12 +146,10 @@ impl GlueGenerator {
             } else {
                 ""
             };
+            let result_type = member.get_result_type().unwrap().get_display_name();
             let mut signature = format!(
                 "{} ZoomGlue_{}_{}({} ZOOMSDK::{1} *self",
-                member.get_result_type().unwrap().get_display_name(),
-                &class_name,
-                &glue_name,
-                const_qualifier,
+                result_type, &class_name, &glue_name, const_qualifier,
             );
             let arguments = member.get_arguments().unwrap();
             for arg in &arguments {
@@ -157,27 +172,73 @@ impl GlueGenerator {
             write!(&mut definition, ") {{\r\n    return self->{}(", cpp_name).unwrap();
             let mut arg_separator = "";
             for arg in &arguments {
-                write!(
-                    &mut definition,
-                    "{}{}",
-                    arg_separator,
-                    arg.get_name().unwrap()
-                )
-                .unwrap();
+                let nam = arg.get_name().unwrap();
+                write!(&mut definition, "{}{}", arg_separator, nam).unwrap();
                 arg_separator = ", ";
             }
             write!(&mut definition, ");\r\n}}").unwrap();
             // println!("{}", declaration);
             // println!("{}", definition);
             self.write_output(&declaration, &mut definition);
+
+            // Event
+            if let Some(ev) = &mut event_implementation {
+                let name_caps = STARTS_WITH_ON
+                    .captures(&cpp_name)
+                    .expect("expected event method name to start with on");
+                let prefix_len = name_caps.get(1).unwrap().as_str().len();
+                if result_type != "void" {
+                    panic!("expected event method to return void");
+                }
+                let field_name = format!("cb{}", &cpp_name[prefix_len..]);
+                // Field
+                write!(&mut ev.fields, "  void (*{})({} *", field_name, class_name).unwrap();
+                for arg in &arguments {
+                    let typ = arg.get_type().unwrap().get_display_name();
+                    write!(&mut ev.fields, ", {}", typ).unwrap();
+                }
+                write!(&mut ev.fields, ") = 0;\r\n").unwrap();
+                // Method
+                write!(&mut ev.methods, "  void {}(", cpp_name).unwrap();
+                let mut arg_separator = "";
+                for arg in &arguments {
+                    let typ = arg.get_type().unwrap().get_display_name();
+                    let nam = arg.get_name().unwrap();
+                    write!(&mut ev.methods, "{}{} {}", arg_separator, typ, nam).unwrap();
+                    arg_separator = ", ";
+                }
+                write!(&mut ev.methods, ") {{\r\n    if ({0}) {0}(this", field_name).unwrap();
+                for arg in &arguments {
+                    let nam = arg.get_name().unwrap();
+                    write!(&mut ev.methods, ", {}", nam).unwrap();
+                }
+                write!(&mut ev.methods, ");\r\n  }}\r\n").unwrap();
+            }
         }
+        if let Some(ev) = &mut event_implementation {
+            let impl_name = &class_name[1..];
+            self.write_hpp(&format!(
+                "/// \\brief Generated interface implementation for callbacks\r\nclass ZoomGlue_{}: public {} {{\r\npublic:\r\n{}{}}};",
+                impl_name, class_name, &ev.fields, &ev.methods
+            ));
+        }
+        // TODO: Generate New / Default
         // TODO: Generate Delete / Destructor
     }
 
     fn write_output(&mut self, declaration: &str, definition: &str) {
+        self.write_hpp(&declaration);
+        self.write_cpp(&definition);
+    }
+
+    fn write_hpp(&mut self, code: &str) {
         use std::io::Write;
-        writeln!(&mut self.hpp_output, "{}", &declaration).unwrap();
-        writeln!(&mut self.cpp_output, "{}", &definition).unwrap();
+        write!(&mut self.hpp_output, "{}\r\n", &code).unwrap();
+    }
+
+    fn write_cpp(&mut self, code: &str) {
+        use std::io::Write;
+        write!(&mut self.cpp_output, "{}\r\n", &code).unwrap();
     }
 }
 
@@ -193,4 +254,10 @@ fn rename_overloads(name: String, names_seen: &mut Vec<Rc<String>>) -> (Rc<Strin
         name = Rc::new(clone);
     }
     return (cpp_name, name);
+}
+
+#[derive(Default)]
+struct EventImplementation {
+    fields: String,
+    methods: String,
 }

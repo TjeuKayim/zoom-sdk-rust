@@ -23,7 +23,9 @@ namespace ZOOMSDK {
         CAuthServiceEvent event;
 
         void onAuthenticationReturn(AuthResult ret) {
-            event.authenticationReturn(event.callbackData, ret);
+            if (event.authenticationReturn) {
+                event.authenticationReturn(event.callbackData, ret);
+            }
         }
 
         void onLoginRet(LOGINSTATUS ret, IAccountInfo *pAccountInfo) {
