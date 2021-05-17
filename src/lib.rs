@@ -18,6 +18,7 @@ pub mod meeting;
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
 use meeting::MeetingService;
+use std::pin::Pin;
 
 pub fn zoom_version() -> String {
     unsafe {
@@ -194,7 +195,7 @@ impl Sdk {
         r
     }
 
-    pub fn create_auth_service(&self) -> ZoomResult<Box<AuthService>> {
+    pub fn create_auth_service(&self) -> ZoomResult<Pin<Box<AuthService>>> {
         AuthService::new()
     }
 

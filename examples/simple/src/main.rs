@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Initialized");
     let meeting = zoom.create_meeting_service()?;
     let mut auth = zoom.create_auth_service()?;
-    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
+    auth.as_mut().set_event(zoom_sdk::auth::AuthServiceEvent {
         authentication_return: Box::new(|auth, res| {
             app.catch_error(|| {
                 app.init_status(&format!("Authentication {:?}", res));

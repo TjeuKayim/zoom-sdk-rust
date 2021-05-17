@@ -1,6 +1,7 @@
 use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, ZoomResult};
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 use std::panic::catch_unwind;
+use std::pin::Pin;
 use std::ptr::NonNull;
 use std::{fmt, mem, ptr};
 
@@ -9,8 +10,8 @@ use std::{fmt, mem, ptr};
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    // TODO: use std::pin::Pin
     event_data: Option<Data<'a>>,
+    _marker: PhantomPinned,
 }
 
 #[derive(Debug)]
@@ -50,13 +51,14 @@ impl fmt::Debug for AuthServiceEvent<'_> {
 }
 
 impl<'a> AuthService<'a> {
-    pub(crate) fn new() -> ZoomResult<Box<Self>> {
+    pub(crate) fn new() -> ZoomResult<Pin<Box<Self>>> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            Ok(Box::new(AuthService {
+            Ok(Box::pin(AuthService {
                 inner,
                 event_data: None,
+                _marker: PhantomPinned,
             }))
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
@@ -95,25 +97,27 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        let service_p = NonNull::from(self as &AuthService);
-        let data = Data {
-            events,
-            object: EventObject {
-                base: unsafe { mem::zeroed() },
-                service: service_p,
-            },
-        };
-        self.event_data = Some(data);
-        let object_base = &mut self.event_data.as_mut().unwrap().object.base;
+    pub fn set_event(self: Pin<&mut Self>, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
         unsafe {
+            let service = Pin::get_unchecked_mut(self);
+            let service_p = NonNull::from(service as &AuthService);
+            let data = Data {
+                events,
+                object: EventObject {
+                    base: mem::zeroed(),
+                    service: service_p,
+                },
+            };
+            service.event_data = Some(data);
+            let object_base = &mut service.event_data.as_mut().unwrap().object.base;
             ffi::ZoomGlue_AuthServiceEvent_PlacementNew(object_base);
             object_base.cbAuthenticationReturn = Some(on_authentication_return);
             object_base.cbLoginRet = Some(on_login_return);
             // safe cast because of inheritance
             let interface_p = object_base as *mut ffi::ZoomGlue_AuthServiceEvent
                 as *mut ffi::ZOOMSDK_IAuthServiceEvent;
-            ffi::ZoomGlue_IAuthService_SetEvent(self.inner.as_ptr(), interface_p).err_wrap(true)?;
+            ffi::ZoomGlue_IAuthService_SetEvent(service.inner.as_ptr(), interface_p)
+                .err_wrap(true)?;
         }
 
         Ok(())
