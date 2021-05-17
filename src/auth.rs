@@ -1,5 +1,4 @@
 use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, ZoomResult};
-use std::ffi::c_void;
 use std::marker::PhantomData;
 use std::panic::catch_unwind;
 use std::ptr::NonNull;
@@ -21,8 +20,15 @@ enum Data<'a> {
     },
     Inline {
         events: AuthServiceEvent<'a>,
-        object: ffi::ZOOMSDK_AuthServiceEvent,
+        object: EventObject<'a>,
     },
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct EventObject<'a> {
+    base: ffi::ZoomGlue_AuthServiceEvent,
+    service: NonNull<AuthService<'a>>,
 }
 
 pub struct AuthServiceEvent<'a> {
@@ -105,7 +111,10 @@ impl<'a> AuthService<'a> {
                     inner: self.inner,
                     data: Data::Inline {
                         events,
-                        object: unsafe { mem::zeroed() },
+                        object: EventObject {
+                            base: unsafe { mem::zeroed() },
+                            service: NonNull::dangling(),
+                        },
                     },
                 });
                 new_object(&mut *b)?;
@@ -113,22 +122,18 @@ impl<'a> AuthService<'a> {
             }
         };
         fn new_object(callback_data: &mut AuthService) -> ZoomResult<()> {
-            let callback_data_p = callback_data as *mut _ as *mut c_void;
+            let service_p = NonNull::from(callback_data as &AuthService);
             if let Data::Inline { object, .. } = &mut callback_data.data {
+                object.service = service_p;
                 unsafe {
-                    ffi::ZOOMSDK_AuthServiceEvent_New(object);
-                    // TODO: Refactor with a wrapper C++ object that uses Rust exported functions
-                    //       instead of function pointers.
-                    object.event = ffi::ZOOMSDK_CAuthServiceEvent {
-                        // TODO: Callback data is unnecessary if repr(C) is used for fixed offset
-                        //       to wrapping struct (using it as first field).
-                        callbackData: callback_data_p,
-                        authenticationReturn: Some(on_authentication_return),
-                        loginReturn: Some(on_login_return),
-                    };
+                    ffi::ZoomGlue_AuthServiceEvent_PlacementNew(&mut object.base);
+                    object.base.cbAuthenticationReturn = Some(on_authentication_return);
+                    object.base.cbLoginRet = Some(on_login_return);
                     ffi::ZoomGlue_IAuthService_SetEvent(
                         callback_data.inner.as_ptr(),
-                        &mut object._base,
+                        // safe cast because of inheritance
+                        &mut object.base as *mut ffi::ZoomGlue_AuthServiceEvent
+                            as *mut ffi::ZOOMSDK_IAuthServiceEvent,
                     )
                     .err_wrap(true)?;
                 }
@@ -244,16 +249,21 @@ impl<'a> AccountInfo<'a> {
     // TODO: GetLoginType
 }
 
-unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
+unsafe extern "C" fn on_authentication_return(
+    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
+    res: ffi::ZOOMSDK_AuthResult,
+) {
+    dbg!("test1");
     let _ = catch_unwind(|| {
         events_callback(data, |events, service| {
+            dbg!("test2");
             (events.authentication_return)(service, map_auth_result(res));
         });
     });
 }
 
 unsafe extern "C" fn on_login_return(
-    data: *mut c_void,
+    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     ret: ffi::ZOOMSDK_LOGINSTATUS,
     info: *mut ffi::ZOOMSDK_IAccountInfo,
 ) {
@@ -275,14 +285,16 @@ unsafe extern "C" fn on_login_return(
 }
 
 unsafe fn events_callback(
-    data: *mut c_void,
+    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     mut f: impl FnMut(&mut AuthServiceEvent, &mut AuthService),
 ) {
-    let service = &mut *(data as *mut AuthService);
+    let service = (*(data as *mut EventObject)).service.as_mut();
     let mut tmp_data = Data::Boxed { events: None };
     mem::swap(&mut service.data, &mut tmp_data);
     if let Data::Inline { events, .. } = &mut tmp_data {
         f(events, service);
+    } else {
+        panic!("Unexpected else branch in events_callback");
     }
     mem::swap(&mut service.data, &mut tmp_data);
 }
