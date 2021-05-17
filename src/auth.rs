@@ -9,21 +9,17 @@ use std::{fmt, mem, ptr};
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    data: Data<'a>,
+    // TODO: use std::pin::Pin
+    event_data: Option<Data<'a>>,
 }
 
 #[derive(Debug)]
-enum Data<'a> {
-    Boxed {
-        // TODO: Consider using std::pin
-        events: Option<Box<AuthService<'a>>>,
-    },
-    Inline {
-        events: AuthServiceEvent<'a>,
-        object: EventObject<'a>,
-    },
+struct Data<'a> {
+    events: AuthServiceEvent<'a>,
+    object: EventObject<'a>,
 }
 
+/// C++ sees this as class that inherits from IAuthServiceEvent
 #[repr(C)]
 #[derive(Debug)]
 pub struct EventObject<'a> {
@@ -54,14 +50,14 @@ impl fmt::Debug for AuthServiceEvent<'_> {
 }
 
 impl<'a> AuthService<'a> {
-    pub(crate) fn new() -> ZoomResult<Self> {
+    pub(crate) fn new() -> ZoomResult<Box<Self>> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            Ok(AuthService {
+            Ok(Box::new(AuthService {
                 inner,
-                data: Data::Boxed { events: None },
-            })
+                event_data: None,
+            }))
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
         }
@@ -100,48 +96,26 @@ impl<'a> AuthService<'a> {
     }
 
     pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        match &mut self.data {
-            Data::Inline { events: e, .. } => {
-                // TODO: This arm is probably never called, change types to statically verify that
-                *e = events;
-                new_object(self)?;
-            }
-            Data::Boxed { events: e } => {
-                let mut b = Box::new(AuthService {
-                    inner: self.inner,
-                    data: Data::Inline {
-                        events,
-                        object: EventObject {
-                            base: unsafe { mem::zeroed() },
-                            service: NonNull::dangling(),
-                        },
-                    },
-                });
-                new_object(&mut *b)?;
-                *e = Some(b);
-            }
+        let service_p = NonNull::from(self as &AuthService);
+        let data = Data {
+            events,
+            object: EventObject {
+                base: unsafe { mem::zeroed() },
+                service: service_p,
+            },
         };
-        fn new_object(callback_data: &mut AuthService) -> ZoomResult<()> {
-            let service_p = NonNull::from(callback_data as &AuthService);
-            if let Data::Inline { object, .. } = &mut callback_data.data {
-                object.service = service_p;
-                unsafe {
-                    ffi::ZoomGlue_AuthServiceEvent_PlacementNew(&mut object.base);
-                    object.base.cbAuthenticationReturn = Some(on_authentication_return);
-                    object.base.cbLoginRet = Some(on_login_return);
-                    ffi::ZoomGlue_IAuthService_SetEvent(
-                        callback_data.inner.as_ptr(),
-                        // safe cast because of inheritance
-                        &mut object.base as *mut ffi::ZoomGlue_AuthServiceEvent
-                            as *mut ffi::ZOOMSDK_IAuthServiceEvent,
-                    )
-                    .err_wrap(true)?;
-                }
-            } else {
-                panic!("not inline");
-            };
-            Ok(())
+        self.event_data = Some(data);
+        let object_base = &mut self.event_data.as_mut().unwrap().object.base;
+        unsafe {
+            ffi::ZoomGlue_AuthServiceEvent_PlacementNew(object_base);
+            object_base.cbAuthenticationReturn = Some(on_authentication_return);
+            object_base.cbLoginRet = Some(on_login_return);
+            // safe cast because of inheritance
+            let interface_p = object_base as *mut ffi::ZoomGlue_AuthServiceEvent
+                as *mut ffi::ZOOMSDK_IAuthServiceEvent;
+            ffi::ZoomGlue_IAuthService_SetEvent(self.inner.as_ptr(), interface_p).err_wrap(true)?;
         }
+
         Ok(())
     }
 }
@@ -253,10 +227,8 @@ unsafe extern "C" fn on_authentication_return(
     data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     res: ffi::ZOOMSDK_AuthResult,
 ) {
-    dbg!("test1");
     let _ = catch_unwind(|| {
         events_callback(data, |events, service| {
-            dbg!("test2");
             (events.authentication_return)(service, map_auth_result(res));
         });
     });
@@ -289,12 +261,11 @@ unsafe fn events_callback(
     mut f: impl FnMut(&mut AuthServiceEvent, &mut AuthService),
 ) {
     let service = (*(data as *mut EventObject)).service.as_mut();
-    let mut tmp_data = Data::Boxed { events: None };
-    mem::swap(&mut service.data, &mut tmp_data);
-    if let Data::Inline { events, .. } = &mut tmp_data {
-        f(events, service);
-    } else {
-        panic!("Unexpected else branch in events_callback");
-    }
-    mem::swap(&mut service.data, &mut tmp_data);
+    let mut tmp_data = None;
+    // callback may not call set_event, as that would mutate the running closure
+    // so temporary swap event data.
+    mem::swap(&mut service.event_data, &mut tmp_data);
+    let events = &mut tmp_data.as_mut().unwrap().events;
+    f(events, service);
+    mem::swap(&mut service.event_data, &mut tmp_data);
 }

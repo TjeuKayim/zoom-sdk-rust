@@ -194,7 +194,7 @@ impl Sdk {
         r
     }
 
-    pub fn create_auth_service(&self) -> ZoomResult<AuthService> {
+    pub fn create_auth_service(&self) -> ZoomResult<Box<AuthService>> {
         AuthService::new()
     }
 
