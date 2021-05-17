@@ -66,11 +66,11 @@ impl<'a> AuthService<'a> {
         let app_key = str_to_u16_vec(&app_key);
         let app_secret = std::env::var("ZOOM_SDK_SECRET").unwrap();
         let app_secret = str_to_u16_vec(&app_secret);
-        let param = ffi::ZOOMSDK_AuthParam {
+        let mut param = ffi::ZOOMSDK_AuthParam {
             appKey: &app_key[0],
             appSecret: &app_secret[0],
         };
-        unsafe { ffi::ZOOMSDK_IAuthService_SDKAuthParam(self.inner.as_ptr(), param) }
+        unsafe { ffi::ZoomGlue_IAuthService_SDKAuth(self.inner.as_ptr(), &mut param) }
             .err_wrap(true)?;
         Ok(())
     }
@@ -78,7 +78,7 @@ impl<'a> AuthService<'a> {
     pub fn login(&self, username: &str, password: &str, remember_me: bool) -> ZoomResult<()> {
         let username = str_to_u16_vec(username);
         let password = str_to_u16_vec(password);
-        let param = ffi::ZOOMSDK_LoginParam {
+        let mut param = ffi::ZOOMSDK_LoginParam {
             loginType: ffi::ZOOMSDK_LoginType_LoginType_Email,
             ut: ffi::ZOOMSDK_tagLoginParam__bindgen_ty_1 {
                 emailLogin: ffi::ZOOMSDK_tagLoginParam4Email {
@@ -88,7 +88,8 @@ impl<'a> AuthService<'a> {
                 },
             },
         };
-        unsafe { ffi::ZOOMSDK_IAuthService_Login(self.inner.as_ptr(), param) }.err_wrap(true)?;
+        unsafe { ffi::ZoomGlue_IAuthService_Login(self.inner.as_ptr(), &mut param) }
+            .err_wrap(true)?;
         Ok(())
     }
 
@@ -125,7 +126,7 @@ impl<'a> AuthService<'a> {
                         authenticationReturn: Some(on_authentication_return),
                         loginReturn: Some(on_login_return),
                     };
-                    ffi::ZOOMSDK_IAuthService_SetEvent(
+                    ffi::ZoomGlue_IAuthService_SetEvent(
                         callback_data.inner.as_ptr(),
                         &mut object._base,
                     )
@@ -238,7 +239,7 @@ impl<'a> AccountInfo<'a> {
     }
 
     pub fn get_display_name(&self) -> String {
-        unsafe { u16_to_string(ffi::ZOOMSDK_IAccountInfo_GetDisplayName(self.raw.as_ptr())) }
+        unsafe { u16_to_string(ffi::ZoomGlue_IAccountInfo_GetDisplayName(self.raw.as_ptr())) }
     }
     // TODO: GetLoginType
 }

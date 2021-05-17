@@ -42,7 +42,7 @@ impl<'a> MeetingService<'a> {
         let uri = str_to_u16_vec(uri);
         let p = self.inner.as_ptr();
         unsafe {
-            ffi::ZOOMSDK_IMeetingsService_HandleZoomWebUriProtocolAction(p, uri.as_ptr())
+            ffi::ZoomGlue_IMeetingService_HandleZoomWebUriProtocolAction(p, uri.as_ptr())
                 .err_wrap(true)
         }
     }

@@ -71,7 +71,7 @@ fn get_last_error() -> Option<ErrorDetail> {
     unsafe {
         let last_err = ffi::ZOOMSDK_GetZoomLastError();
         if !last_err.is_null() {
-            let category = match ffi::ZOOMSDK_IZoomLastError_GetErrorType(last_err) {
+            let category = match ffi::ZoomGlue_IZoomLastError_GetErrorType(last_err) {
                 ffi::ZOOMSDK_LastErrorType_LastErrorType_None => "No error",
                 ffi::ZOOMSDK_LastErrorType_LastErrorType_Auth => "Auth (verification)",
                 ffi::ZOOMSDK_LastErrorType_LastErrorType_Login => "Login",
@@ -81,9 +81,9 @@ fn get_last_error() -> Option<ErrorDetail> {
                 }
                 _ => "Unknown LastErrorType",
             };
-            let code = ffi::ZOOMSDK_IZoomLastError_GetErrorCode(last_err);
+            let code = ffi::ZoomGlue_IZoomLastError_GetErrorCode(last_err);
             let description =
-                crate::u16_to_string(ffi::ZOOMSDK_IZoomLastError_GetErrorDescription(last_err));
+                crate::u16_to_string(ffi::ZoomGlue_IZoomLastError_GetErrorDescription(last_err));
             // const pointers returned so don't need drop (demo\sdk_demo_v2\mess_info.cpp)
             return Some(ErrorDetail {
                 category,
