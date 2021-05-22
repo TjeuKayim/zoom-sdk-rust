@@ -17,7 +17,9 @@ pub mod meeting;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
+use lazycell::LazyCell;
 use meeting::MeetingService;
+use std::cell::{Ref, RefCell};
 use std::pin::Pin;
 
 pub fn zoom_version() -> String {
@@ -140,9 +142,7 @@ impl InitParam {
         }
         unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(true)?;
         // TODO: Must CleanUPSDK be called if InitSDK failed?
-        Ok(Sdk {
-            phantom: PhantomData,
-        })
+        Ok(Sdk(InnerSdk::default()))
     }
 }
 
@@ -170,9 +170,13 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// }
 /// ```
 #[derive(Debug)]
-pub struct Sdk {
+pub struct Sdk(InnerSdk);
+
+#[derive(Debug, Default)]
+struct InnerSdk {
     /// This struct is not supposed to be Send nor Sync
     phantom: PhantomData<*mut ()>,
+    meeting: LazyCell<MeetingService>,
 }
 
 impl Drop for Sdk {
@@ -199,8 +203,17 @@ impl Sdk {
         AuthService::new()
     }
 
-    pub fn create_meeting_service(&self) -> ZoomResult<MeetingService> {
-        MeetingService::new(self)
+    pub fn create_meeting_service(&self) -> ZoomResult<&MeetingService> {
+        self.0.meeting.try_borrow_with(|| MeetingService::new())
+        // RefCell<Option didn't work out
+        // if let Some(m) = self.meeting.borrow() {
+        //     Ok(m)
+        // } else {
+        //     *self.meeting.borrow_mut() = Some(MeetingService::new()?);
+        //     Ok(RefCell::map(self.meeting.borrow().as_ref().unwrap(), |m| {
+        //         m.as_ref().unwrap()
+        //     }))
+        // }
     }
 }
 

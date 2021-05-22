@@ -483,6 +483,7 @@ dependencies = [
 name = "zoom-sdk"
 version = "0.1.0"
 dependencies = [
+ "lazycell",
  "winapi",
  "zoom-sdk-windows-sys",
 ]

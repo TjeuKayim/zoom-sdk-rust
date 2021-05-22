@@ -3,14 +3,12 @@ use std::ptr::NonNull;
 use std::{fmt, ptr};
 
 /// Meeting Service
-pub struct MeetingService<'a> {
+pub struct MeetingService {
     /// This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IMeetingService>,
-    #[allow(dead_code)]
-    sdk: &'a Sdk,
 }
 
-impl Drop for MeetingService<'_> {
+impl Drop for MeetingService {
     fn drop(&mut self) {
         unsafe { ffi::ZOOMSDK_DestroyMeetingService(self.inner.as_ptr()) }
             .err_wrap(true)
@@ -18,18 +16,18 @@ impl Drop for MeetingService<'_> {
     }
 }
 
-impl fmt::Debug for MeetingService<'_> {
+impl fmt::Debug for MeetingService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("zoom_sdk::MeetingService").finish()
     }
 }
 
-impl<'a> MeetingService<'a> {
-    pub(crate) fn new(sdk: &'a Sdk) -> ZoomResult<Self> {
+impl MeetingService {
+    pub(crate) fn new() -> ZoomResult<Self> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateMeetingService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            Ok(MeetingService { inner, sdk })
+            Ok(MeetingService { inner })
         } else {
             Err(Error::new_rust(
                 "ZOOMSDK_CreateMeetingService returned null",
