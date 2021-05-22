@@ -17,9 +17,7 @@ pub mod meeting;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
-use lazycell::LazyCell;
 use meeting::MeetingService;
-use std::cell::{Ref, RefCell};
 use std::pin::Pin;
 
 pub fn zoom_version() -> String {
@@ -176,7 +174,6 @@ pub struct Sdk(InnerSdk);
 struct InnerSdk {
     /// This struct is not supposed to be Send nor Sync
     phantom: PhantomData<*mut ()>,
-    meeting: LazyCell<MeetingService>,
 }
 
 impl Drop for Sdk {
@@ -203,17 +200,8 @@ impl Sdk {
         AuthService::new()
     }
 
-    pub fn create_meeting_service(&self) -> ZoomResult<&MeetingService> {
-        self.0.meeting.try_borrow_with(|| MeetingService::new())
-        // RefCell<Option didn't work out
-        // if let Some(m) = self.meeting.borrow() {
-        //     Ok(m)
-        // } else {
-        //     *self.meeting.borrow_mut() = Some(MeetingService::new()?);
-        //     Ok(RefCell::map(self.meeting.borrow().as_ref().unwrap(), |m| {
-        //         m.as_ref().unwrap()
-        //     }))
-        // }
+    pub fn create_meeting_service(&self) -> ZoomResult<MeetingService> {
+        MeetingService::new()
     }
 }
 
@@ -300,9 +288,7 @@ mod tests {
     #[test]
     fn zoom_init_again() {
         fn uninitialized() -> Sdk {
-            Sdk {
-                phantom: PhantomData,
-            }
+            Sdk(InnerSdk::default())
         }
         // Run clean up before initialize
         uninitialized().clean_up().unwrap();
