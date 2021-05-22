@@ -140,7 +140,7 @@ pub enum AuthResult {
     /// Unknown error.
     Unknown,
     /// Service is busy.
-    ServiceBuzy,
+    ServiceBusy,
     /// Initial status.
     None,
     /// Time out.
@@ -167,7 +167,7 @@ fn map_auth_result(result: i32) -> AuthResult {
         ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTSUPPORT => AuthResult::AccountNotSupport,
         ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTENABLESDK => AuthResult::AccountNotEnableSdk,
         ffi::ZOOMSDK_AuthResult_AUTHRET_UNKNOWN => AuthResult::Unknown,
-        ffi::ZOOMSDK_AuthResult_AUTHRET_SERVICE_BUSY => AuthResult::ServiceBuzy,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_SERVICE_BUSY => AuthResult::ServiceBusy,
         ffi::ZOOMSDK_AuthResult_AUTHRET_NONE => AuthResult::None,
         ffi::ZOOMSDK_AuthResult_AUTHRET_OVERTIME => AuthResult::OverTime,
         ffi::ZOOMSDK_AuthResult_AUTHRET_NETWORKISSUE => AuthResult::NetworkIssue,
@@ -184,7 +184,7 @@ fn map_auth_result_description(result: AuthResult) -> &'static str {
         AuthResult::AccountNotSupport => "The user account does not support",
         AuthResult::AccountNotEnableSdk => "The user account is not enabled for SDK",
         AuthResult::Unknown => "Unknown error",
-        AuthResult::ServiceBuzy => "Service is busy",
+        AuthResult::ServiceBusy => "Service is busy",
         AuthResult::None => "Initial status",
         AuthResult::OverTime => "Time out",
         AuthResult::NetworkIssue => "Network issues",
