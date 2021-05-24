@@ -10,14 +10,8 @@ use std::{fmt, mem, ptr};
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    event_data: Option<Data<'a>>,
+    event_data: Option<EventObject<'a>>,
     _marker: PhantomPinned,
-}
-
-#[derive(Debug)]
-struct Data<'a> {
-    events: AuthServiceEvent<'a>,
-    object: EventObject<'a>,
 }
 
 /// C++ sees this as class that inherits from IAuthServiceEvent
@@ -26,6 +20,7 @@ struct Data<'a> {
 pub struct EventObject<'a> {
     base: ffi::ZoomGlue_AuthServiceEvent,
     service: NonNull<AuthService<'a>>,
+    events: AuthServiceEvent<'a>,
 }
 
 pub struct AuthServiceEvent<'a> {
@@ -102,15 +97,13 @@ impl<'a> AuthService<'a> {
         unsafe {
             let service = Pin::get_unchecked_mut(self.as_mut());
             let service_p = NonNull::from(service as &AuthService);
-            let data = Data {
+            let data = EventObject {
+                base: mem::zeroed(),
+                service: service_p,
                 events,
-                object: EventObject {
-                    base: mem::zeroed(),
-                    service: service_p,
-                },
             };
             service.event_data = Some(data);
-            let object_base = &mut service.event_data.as_mut().unwrap().object.base;
+            let object_base = &mut service.event_data.as_mut().unwrap().base;
             ffi::ZoomGlue_AuthServiceEvent_PlacementNew(object_base);
             object_base.cbAuthenticationReturn = Some(on_authentication_return);
             object_base.cbLoginRet = Some(on_login_return);
