@@ -97,10 +97,10 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(self: Pin<&mut Self>, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
+    pub fn set_event(self: &mut Pin<Box<Self>>, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
         // Pinned because the self-referencing struct and a pointer passed to C++.
         unsafe {
-            let service = Pin::get_unchecked_mut(self);
+            let service = Pin::get_unchecked_mut(self.as_mut());
             let service_p = NonNull::from(service as &AuthService);
             let data = Data {
                 events,

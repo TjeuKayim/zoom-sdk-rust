@@ -1,101 +1,90 @@
-use native_windows_derive::NwgUi;
 use native_windows_gui as nwg;
-use nwg::NativeUi;
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
+use std::pin::Pin;
 use std::ptr;
+use std::rc::Rc;
 use winapi::um::libloaderapi::GetModuleHandleA;
-
-#[derive(NwgUi, Default)]
-pub struct BasicApp {
-    #[nwg_control(size: (300, 200), position: (300, 300), title: "Basic example", flags: "WINDOW|VISIBLE")]
-    #[nwg_events( OnInit: [BasicApp::init], OnWindowClose: [BasicApp::exit] )]
-    window: nwg::Window,
-
-    #[nwg_layout(parent: window, spacing: 1)]
-    grid: nwg::GridLayout,
-
-    #[nwg_control(text: "Heisenberg", focus: true)]
-    #[nwg_layout_item(layout: grid, row: 0, col: 0)]
-    name_edit: nwg::TextInput,
-
-    #[nwg_control(text: "Say my name")]
-    #[nwg_layout_item(layout: grid, col: 0, row: 1, row_span: 2)]
-    #[nwg_events( OnButtonClick: [BasicApp::say_hello] )]
-    hello_button: nwg::Button,
-
-    #[nwg_control(text: "Initializing...")]
-    #[nwg_layout_item(layout: grid, col: 0, row: 3, row_span: 2)]
-    init_status_label: nwg::Label,
-
-    zoom_state: RefCell<Option<ZoomState>>,
-}
-
-impl BasicApp {
-    fn init(&self) {
-        self.catch_error(|| join_meeting(self));
-    }
-
-    fn say_hello(&self) {
-        nwg::modal_info_message(
-            &self.window,
-            "Hello",
-            &format!("Hello {}", self.name_edit.text()),
-        );
-    }
-
-    fn init_status(&self, text: &str) {
-        self.init_status_label.set_text(text);
-    }
-
-    fn exit(&self) {
-        nwg::stop_thread_dispatch();
-    }
-
-    fn report_error(&self, err_message: &str) {
-        nwg::modal_error_message(&self.window, "Error", err_message);
-    }
-
-    fn catch_error(&self, f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {
-        f().unwrap_or_else(|e| {
-            println!("{0}, detail {0:?}", &e);
-            self.report_error(&format!("{}", &e));
-        });
-    }
-}
 
 fn main() {
     nwg::init().expect("Failed to init Native Windows GUI");
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
-    let _app = BasicApp::build_ui(Default::default()).expect("Failed to build UI");
+    let mut window = Default::default();
+    let mut log_label = Default::default();
+    let layout = Default::default();
+
+    nwg::Window::builder()
+        .size((300, 115))
+        // .position((300, 300))
+        .title("Rust Zoom SDK")
+        .build(&mut window)
+        .unwrap();
+
+    nwg::Label::builder()
+        .parent(&window)
+        .text("Starting...")
+        .build(&mut log_label)
+        .unwrap();
+
+    nwg::GridLayout::builder()
+        .parent(&window)
+        .spacing(1)
+        .child_item(nwg::GridLayoutItem::new(&log_label, 0, 1, 1, 2))
+        .build(&layout)
+        .unwrap();
+
+    let window = Rc::new(window);
+    let events_window = window.clone();
+
+    // TODO: unfortunately, full_bind_event_handler requires static lifetime
+    let zoom_state = RefCell::new(ZoomState::default());
+
+    let handler = nwg::full_bind_event_handler(&window.handle, move |evt, _evt_data, handle| {
+        use nwg::Event as E;
+
+        match evt {
+            E::OnWindowClose => {
+                if &handle == &events_window as &nwg::Window {
+                    nwg::stop_thread_dispatch();
+                }
+            }
+            E::OnInit => {
+                println!("OnInit");
+                catch_error(|| join_meeting(&zoom_state));
+            }
+            _ => {}
+        }
+    });
+
     nwg::dispatch_thread_events();
+    nwg::unbind_event_handler(&handler);
 }
 
-struct ZoomState {
-    sdk: zoom_sdk::Sdk,
+#[derive(Debug, Default)]
+struct ZoomState<'a> {
+    meeting: Option<zoom_sdk::meeting::MeetingService<'a>>,
+    auth: Option<Pin<Box<zoom_sdk::auth::AuthService<'a>>>>,
 }
 
-fn join_meeting(app: &BasicApp) -> Result<(), Box<dyn std::error::Error>> {
-    let sdk = zoom_sdk::InitParam::new()
+fn join_meeting<'a, 'b>(
+    state_cell: &'a RefCell<ZoomState<'b>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let init_param = zoom_sdk::InitParam::new()
         .branding_name(Some("RustWrapper")) // working
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
         .ui_window_icon_big_id(2734) // working
         .ui_window_icon_small_id(2734)
         .em_language_id(zoom_sdk::SdkLanguageId::English) // working
         .enable_log_by_default(true)
-        .enable_generate_dump(true)
-        .init_sdk()?;
+        .enable_generate_dump(true);
+    zoom_sdk::init_sdk(&init_param).expect("Initialization failed");
     println!("Initialized");
-    // *app.zoom_state.borrow_mut() = Some(ZoomState { sdk });
-    // let sdk = Ref::map(app.zoom_state.borrow(), |s| &s.as_ref().unwrap().sdk);
-    let mut state = app.zoom_state.borrow_mut();
-    *state = Some(ZoomState { sdk });
-    let sdk = &state.as_ref().unwrap().sdk;
-    let meeting = sdk.create_meeting_service()?;
-    let mut auth = sdk.create_auth_service()?;
-    auth.as_mut().set_event(zoom_sdk::auth::AuthServiceEvent {
+    let mut state = state_cell.borrow_mut();
+    state.meeting = Some(zoom_sdk::create_meeting_service()?);
+    state.auth = Some(zoom_sdk::create_auth_service()?);
+    let auth = state.auth.as_mut().unwrap();
+    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
         authentication_return: Box::new(|auth, res| {
-            app.catch_error(|| {
-                app.init_status(&format!("Authentication {:?}", res));
+            catch_error(|| {
                 println!("AuthResult {:?}", res);
                 let username = std::env::var("ZOOM_LOGIN_USER")?;
                 let password = std::env::var("ZOOM_LOGIN_PASS")?;
@@ -104,14 +93,18 @@ fn join_meeting(app: &BasicApp) -> Result<(), Box<dyn std::error::Error>> {
             });
         }),
         login_return: Box::new(|_auth, status| {
-            app.catch_error(|| {
+            catch_error(|| {
                 println!("login status {:?}", status);
                 if let zoom_sdk::auth::LoginStatus::Success(info) = status {
                     let name = info.get_display_name();
                     println!("name {}", name);
-                    app.init_status(&format!("Logged in as {}", name));
                     let uri = std::env::var("ZOOM_URI")?;
-                    meeting.handle_zoom_web_uri_protocol_action(&uri)?;
+                    // TODO: meeting
+                    // RefCell::borrow_mut(&state_cell)
+                    //     .meeting
+                    //     .as_ref()
+                    //     .unwrap()
+                    //     .handle_zoom_web_uri_protocol_action(&uri)?;
                 }
                 Ok(())
             });
@@ -121,3 +114,19 @@ fn join_meeting(app: &BasicApp) -> Result<(), Box<dyn std::error::Error>> {
     println!("auth service created");
     Ok(())
 }
+
+fn catch_error(f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {
+    f().unwrap_or_else(|e| {
+        eprintln!("{0}, detail {0:?}", &e);
+        // self.report_error(&format!("{}", &e));
+    });
+}
+
+// fn init_status(&self, text: &str) {
+//     self.init_status_label.set_text(text);
+// }
+//
+// fn report_error(&self, err_message: &str) {
+//     nwg::modal_error_message(&self.window, "Error", err_message);
+// }
+//
