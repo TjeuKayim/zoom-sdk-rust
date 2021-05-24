@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::ptr;
 use std::rc::Rc;
 use winapi::um::libloaderapi::GetModuleHandleA;
+use zoom_sdk::auth::{AuthResult, AuthService, LoginStatus};
 
 fn main() {
     nwg::init().expect("Failed to init Native Windows GUI");
@@ -58,12 +59,6 @@ fn main() {
     nwg::unbind_event_handler(&handler);
 }
 
-#[derive(Debug, Default)]
-struct ZoomState {
-    meeting: Option<zoom_sdk::meeting::MeetingService<'static>>,
-    auth: Option<Pin<Box<zoom_sdk::auth::AuthService<'static>>>>,
-}
-
 fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error::Error>> {
     let init_param = zoom_sdk::InitParam::new()
         .branding_name(Some("RustWrapper")) // working
@@ -79,35 +74,49 @@ fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error
     state_borrow.meeting = Some(zoom_sdk::create_meeting_service()?);
     state_borrow.auth = Some(zoom_sdk::create_auth_service()?);
     let auth = state_borrow.auth.as_mut().unwrap();
-    let state_clone = state.clone();
-    auth.set_event(zoom_sdk::auth::AuthServiceEvent {
-        authentication_return: Box::new(|auth, res| {
-            catch_error(|| {
-                println!("AuthResult {:?}", res);
-                let username = std::env::var("ZOOM_LOGIN_USER")?;
-                let password = std::env::var("ZOOM_LOGIN_PASS")?;
-                auth.login(&username, &password, false)?;
-                Ok(())
-            });
-        }),
-        login_return: Box::new(move |_auth, status| {
-            catch_error(|| {
-                println!("login status {:?}", status);
-                if let zoom_sdk::auth::LoginStatus::Success(info) = status {
-                    let name = info.get_display_name();
-                    println!("name {}", name);
-                    let uri = std::env::var("ZOOM_URI")?;
-                    let state = RefCell::borrow_mut(&state_clone);
-                    let meeting = state.meeting.as_ref().unwrap();
-                    meeting.handle_zoom_web_uri_protocol_action(&uri)?;
-                }
-                Ok(())
-            });
-        }),
-    })?;
+    auth.set_event(Box::new(EventImpl {
+        state: state.clone(),
+    }))?;
     auth.sdk_auth()?;
     println!("auth service created");
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct ZoomState {
+    meeting: Option<zoom_sdk::meeting::MeetingService<'static>>,
+    auth: Option<Pin<Box<zoom_sdk::auth::AuthService<'static>>>>,
+}
+
+struct EventImpl {
+    state: Rc<RefCell<ZoomState>>,
+}
+
+impl zoom_sdk::auth::AuthServiceEvent for EventImpl {
+    fn authentication_return(&self, auth: &AuthService, auth_result: AuthResult) {
+        catch_error(|| {
+            println!("AuthResult {:?}", auth_result);
+            let username = std::env::var("ZOOM_LOGIN_USER")?;
+            let password = std::env::var("ZOOM_LOGIN_PASS")?;
+            auth.login(&username, &password, false)?;
+            Ok(())
+        });
+    }
+
+    fn login_return(&self, _auth: &AuthService, login_status: LoginStatus) {
+        catch_error(|| {
+            println!("login status {:?}", login_status);
+            if let zoom_sdk::auth::LoginStatus::Success(info) = login_status {
+                let name = info.get_display_name();
+                println!("name {}", name);
+                let uri = std::env::var("ZOOM_URI")?;
+                let state = RefCell::borrow_mut(&self.state);
+                let meeting = state.meeting.as_ref().unwrap();
+                meeting.handle_zoom_web_uri_protocol_action(&uri)?;
+            }
+            Ok(())
+        });
+    }
 }
 
 fn catch_error(f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {

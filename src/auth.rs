@@ -16,19 +16,15 @@ pub struct AuthService<'a> {
 
 /// C++ sees this as class that inherits from IAuthServiceEvent
 #[repr(C)]
-#[derive(Debug)]
 pub struct EventObject<'a> {
     base: ffi::ZoomGlue_AuthServiceEvent,
     service: NonNull<AuthService<'a>>,
-    events: AuthServiceEvent<'a>,
+    events: Box<dyn AuthServiceEvent + 'a>,
 }
 
-pub struct AuthServiceEvent<'a> {
-    // TODO: Use generic type param instead of dyn here
-    //       or make this a trait.
-    // TODO: How to handle errors?
-    pub authentication_return: Box<dyn FnMut(&AuthService, AuthResult) + 'a>,
-    pub login_return: Box<dyn FnMut(&AuthService, LoginStatus) + 'a>,
+pub trait AuthServiceEvent {
+    fn authentication_return(&self, service: &AuthService, auth_result: AuthResult);
+    fn login_return(&self, service: &AuthService, login_status: LoginStatus);
 }
 
 impl Drop for AuthService<'_> {
@@ -39,9 +35,9 @@ impl Drop for AuthService<'_> {
     }
 }
 
-impl fmt::Debug for AuthServiceEvent<'_> {
+impl fmt::Debug for EventObject<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::AuthServiceEvent").finish()
+        f.debug_struct("zoom_sdk::EventObject").finish()
     }
 }
 
@@ -92,7 +88,10 @@ impl<'a> AuthService<'a> {
         Ok(())
     }
 
-    pub fn set_event(self: &mut Pin<Box<Self>>, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
+    pub fn set_event(
+        self: &mut Pin<Box<Self>>,
+        events: Box<dyn AuthServiceEvent + 'a>,
+    ) -> ZoomResult<()> {
         // Pinned because the self-referencing struct and a pointer passed to C++.
         unsafe {
             let service = Pin::get_unchecked_mut(self.as_mut());
@@ -227,7 +226,7 @@ unsafe extern "C" fn on_authentication_return(
 ) {
     let _ = catch_unwind(|| {
         events_callback(data, |events, service| {
-            (events.authentication_return)(service, map_auth_result(res));
+            events.authentication_return(service, map_auth_result(res));
         });
     });
 }
@@ -249,14 +248,14 @@ unsafe extern "C" fn on_login_return(
                 ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
                 _ => LoginStatus::Unmapped(ret),
             };
-            (events.login_return)(service, status);
+            events.login_return(service, status);
         });
     });
 }
 
 unsafe fn events_callback(
     data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
-    mut f: impl FnMut(&mut AuthServiceEvent, &mut AuthService),
+    mut f: impl FnMut(&mut Box<dyn AuthServiceEvent>, &mut AuthService),
 ) {
     let service = (*(data as *mut EventObject)).service.as_mut();
     let mut tmp_data = None;
