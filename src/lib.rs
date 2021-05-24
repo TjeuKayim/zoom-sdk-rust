@@ -168,7 +168,7 @@ pub fn create_auth_service<'a>() -> ZoomResult<Pin<Box<AuthService<'a>>>> {
 
 /// Create meeting service interface.
 /// Destroy is called automatically on drop.
-pub fn create_meeting_service<'a>() -> ZoomResult<MeetingService<'a>> {
+pub fn create_meeting_service<'a>() -> ZoomResult<Pin<Box<MeetingService<'a>>>> {
     MeetingService::new()
 }
 

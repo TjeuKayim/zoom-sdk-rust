@@ -37,9 +37,6 @@ impl fmt::Debug for EventObject<'_> {
     }
 }
 
-#[derive(Debug)]
-pub enum StatisticsWarningType {}
-
 impl Drop for MeetingService<'_> {
     fn drop(&mut self) {
         unsafe { ffi::ZOOMSDK_DestroyMeetingService(self.inner.as_ptr()) }
@@ -55,15 +52,15 @@ impl fmt::Debug for MeetingService<'_> {
 }
 
 impl<'a> MeetingService<'a> {
-    pub(crate) fn new() -> ZoomResult<Self> {
+    pub(crate) fn new() -> ZoomResult<Pin<Box<Self>>> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateMeetingService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            Ok(MeetingService {
+            Ok(Box::pin(MeetingService {
                 inner,
                 event_data: None,
                 _marker: Default::default(),
-            })
+            }))
         } else {
             Err(Error::new_rust(
                 "ZOOMSDK_CreateMeetingService returned null",
@@ -186,7 +183,7 @@ fn map_meeting_status(status: ffi::ZOOMSDK_MeetingStatus, i_result: i32) -> Meet
 
 /// Meeting failure code.
 #[derive(Debug)]
-enum MeetingFailCode {
+pub enum MeetingFailCode {
     /// Start meeting successfully.
     MeetingSuccess,
     /// Network error.
@@ -340,13 +337,13 @@ fn map_fail(i_result: i32) -> MeetingFailCode {
         ffi::ZOOMSDK_MeetingFailCode_CONF_FAIL_REMOVED_BY_HOST => {
             MeetingFailCode::ConfFailRemovedByHost
         }
-        _ => MeetingFailCode::Unmapped,
+        _ => MeetingFailCode::Unmapped(i_result),
     }
 }
 
 /// Meeting failure code.
 #[derive(Debug)]
-enum MeetingEndReason {
+pub enum MeetingEndReason {
     /// For initialization.
     None,
     /// Kicked by host.
@@ -383,7 +380,37 @@ fn map_end(i_result: i32) -> MeetingEndReason {
         ffi::ZOOMSDK_MeetingEndReason_EndMeetingReason_NetworkBroken => {
             MeetingEndReason::NetworkBroken
         }
-        _ => MeetingFailCode::Unmapped,
+        _ => MeetingEndReason::Unmapped(i_result),
+    }
+}
+
+/// Meeting statistics warning type.
+#[derive(Debug)]
+pub enum StatisticsWarningType {
+    /// No warning.
+    None,
+    /// The network connection quality is bad.
+    NetworkQualityBad,
+    /// The system is busy.
+    BusySystem,
+    /// Unmapped.
+    Unmapped(i32),
+}
+
+impl From<i32> for StatisticsWarningType {
+    fn from(i: i32) -> StatisticsWarningType {
+        match i {
+            ffi::ZOOMSDK_StatisticsWarningType_Statistics_Warning_None => {
+                StatisticsWarningType::None
+            }
+            ffi::ZOOMSDK_StatisticsWarningType_Statistics_Warning_Network_Quality_Bad => {
+                StatisticsWarningType::NetworkQualityBad
+            }
+            ffi::ZOOMSDK_StatisticsWarningType_Statistics_Warning_Busy_System => {
+                StatisticsWarningType::BusySystem
+            }
+            _ => StatisticsWarningType::Unmapped(i),
+        }
     }
 }
 
@@ -405,7 +432,7 @@ unsafe extern "C" fn on_meeting_statistics_warning_notification(
 ) {
     let _ = catch_unwind(|| {
         events_callback(this, |events, service| {
-            events.meeting_statistics_warning_notification(service, todo!());
+            events.meeting_statistics_warning_notification(service, typ.into());
         });
     });
 }
