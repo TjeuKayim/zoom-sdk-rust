@@ -23,8 +23,8 @@ pub struct EventObject<'a> {
 }
 
 pub trait AuthServiceEvent {
-    fn authentication_return(&self, service: &AuthService, auth_result: AuthResult);
-    fn login_return(&self, service: &AuthService, login_status: LoginStatus);
+    fn authentication_return(&self, _auth: &AuthService, _auth_result: AuthResult) {}
+    fn login_return(&self, _auth: &AuthService, _login_status: LoginStatus) {}
 }
 
 impl Drop for AuthService<'_> {
@@ -232,13 +232,13 @@ unsafe extern "C" fn on_authentication_return(
 }
 
 unsafe extern "C" fn on_login_return(
-    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
+    this: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     ret: ffi::ZOOMSDK_LOGINSTATUS,
     info: *mut ffi::ZOOMSDK_IAccountInfo,
 ) {
     let lifetime = ();
     let _ = catch_unwind(|| {
-        events_callback(data, |events, service| {
+        events_callback(this, |events, service| {
             let status = match ret {
                 ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
                 ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
@@ -254,10 +254,10 @@ unsafe extern "C" fn on_login_return(
 }
 
 unsafe fn events_callback(
-    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
+    this: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     mut f: impl FnMut(&mut Box<dyn AuthServiceEvent>, &mut AuthService),
 ) {
-    let service = (*(data as *mut EventObject)).service.as_mut();
+    let service = (*(this as *mut EventObject)).service.as_mut();
     let mut tmp_data = None;
     // callback may not call set_event, as that would mutate the running closure
     // so temporary swap event data.
