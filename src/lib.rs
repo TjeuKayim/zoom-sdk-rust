@@ -2,12 +2,18 @@
 //!
 //! The Zoom C++ API [must be called](https://devforum.zoom.us/t/list-of-active-audio-users-not-received-in-callback/1397/9)
 //! from the single thread that runs the Windows message loop.
+//! # Examples
+//!
+//! ```
+//! fn main() -> Result<(), zoom_sdk::error::Error> {
+//!     zoom_sdk::init_sdk(zoom_sdk::InitParam::new()?);
+//!     Ok(())
+//! }
+//! ```
 
 use std::ffi::OsString;
-use std::marker::PhantomData;
 use std::os::windows::prelude::*;
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
 use winapi::shared::minwindef::HMODULE;
 use zoom_sdk_windows_sys as ffi;
 
@@ -20,6 +26,7 @@ use error::{Error, ErrorExt, ZoomResult};
 use meeting::MeetingService;
 use std::pin::Pin;
 
+/// Get the version of ZOOM SDK.
 pub fn zoom_version() -> String {
     unsafe {
         let version = ffi::ZOOMSDK_GetSDKVersion();
@@ -133,76 +140,36 @@ impl InitParam {
     }
 
     // TODO: ConfigOpts, locale, permonitor_awareness_mode, renderOpts, rawdataOpts
-
-    pub fn init_sdk(mut self) -> ZoomResult<Sdk> {
-        if INITIALIZED.swap(true, Ordering::SeqCst) {
-            return Err(Error::new_rust("Only one Sdk can exist at a time"));
-        }
-        unsafe { ffi::ZOOMSDK_InitSDK(&mut self.param) }.err_wrap(true)?;
-        // TODO: Must CleanUPSDK be called if InitSDK failed?
-        Ok(Sdk(InnerSdk::default()))
-    }
 }
 
-static INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-/// Initialized SDK returned by [`InitParam::init_sdk`].
-/// Drop runs [C++ CleanUPSDK](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
+/// Initialize ZOOM SDK.
 ///
-/// # Examples
+/// Run `clean_up_sdk` to free resources.
 ///
-/// ```
-/// fn main() -> Result<(), zoom_sdk::error::Error> {
-/// let sdk = zoom_sdk::InitParam::new().init_sdk()?;
-/// Ok(())
-/// }
-/// ```
-///
-/// Can't be send to another thread:
-///
-/// ```compile_fail
-/// fn main() -> Result<(), zoom_sdk::error::Error> {
-/// let sdk = zoom_sdk::InitParam::new().init_sdk()?;
-/// std::thread::spawn(move || { sdk.clean_up(); });
-/// Ok(())
-/// }
-/// ```
-#[derive(Debug)]
-pub struct Sdk(InnerSdk);
-
-#[derive(Debug, Default)]
-struct InnerSdk {
-    /// This struct is not supposed to be Send nor Sync
-    phantom: PhantomData<*mut ()>,
+/// See [C++ `InitSDK`](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#ad2ef730cb6a637dc46747d0f2dc83893)
+pub fn init_sdk(init_param: &InitParam) -> ZoomResult<()> {
+    // Safety: InitParam& won't be mutated
+    unsafe { ffi::ZOOMSDK_InitSDK(&init_param.param as *const _ as *mut _) }.err_wrap(true)?;
+    Ok(())
 }
 
-impl Drop for Sdk {
-    fn drop(&mut self) {
-        unsafe { self.clean_up_internal().unwrap() };
-    }
+/// Clean up ZOOM SDK.
+///
+/// See [C++ `CleanUPSDK`](https://marketplacefront.zoom.us/sdk/meeting/windows/zoom__sdk_8h.html#a4d51ce7c15c3ca14851acaad646d3de9).
+pub fn clean_up_sdk() -> ZoomResult<()> {
+    unsafe { ffi::ZOOMSDK_CleanUPSDK().err_wrap(true) }
 }
 
-impl Sdk {
-    pub fn clean_up(self) -> Result<(), (Error, Sdk)> {
-        unsafe { self.clean_up_internal().map_err(|e| (e, self)) }
-    }
+/// Create authentication service interface.
+/// Destroy is called automatically on drop.
+pub fn create_auth_service<'a>() -> ZoomResult<Pin<Box<AuthService<'a>>>> {
+    AuthService::new()
+}
 
-    /// CleanUPSDK
-    /// # Safety
-    /// Must only be called once.
-    unsafe fn clean_up_internal(&self) -> ZoomResult<()> {
-        let r = ffi::ZOOMSDK_CleanUPSDK().err_wrap(true);
-        INITIALIZED.store(false, Ordering::SeqCst);
-        r
-    }
-
-    pub fn create_auth_service(&self) -> ZoomResult<Pin<Box<AuthService>>> {
-        AuthService::new()
-    }
-
-    pub fn create_meeting_service(&self) -> ZoomResult<MeetingService> {
-        MeetingService::new()
-    }
+/// Create meeting service interface.
+/// Destroy is called automatically on drop.
+pub fn create_meeting_service<'a>() -> ZoomResult<MeetingService<'a>> {
+    MeetingService::new()
 }
 
 /// Encodes nul-terminated wide string and stores in cache.
@@ -287,31 +254,35 @@ mod tests {
 
     #[test]
     fn zoom_init_again() {
-        fn uninitialized() -> Sdk {
-            Sdk(InnerSdk::default())
-        }
         // Run clean up before initialize
-        uninitialized().clean_up().unwrap();
-        uninitialized().clean_up().unwrap();
+        clean_up_sdk().unwrap();
+        clean_up_sdk().unwrap();
         // Version 5.2.1 failed this tests.
         // SDK can be initialized and cleaned up multiple times,
         // but can't be initialized second time after clean up ran once.
         // STATUS_ACCESS_VIOLATION was thrown.
         // So it might not be intended to run init multiple times.
         // Since version 5.4.3 this was fixed.
-        let sdk1 = InitParam::new().init_sdk().unwrap();
-        sdk1.create_auth_service().unwrap();
-        let err = InitParam::new().init_sdk().unwrap_err();
+        let init_param = InitParam::new();
+        init_sdk(&init_param).unwrap();
+        create_auth_service().unwrap();
+        // init can be called again
+        init_sdk(&init_param).unwrap();
+        clean_up_sdk().unwrap();
+        // SDK 2
+        init_sdk(&init_param).unwrap();
+        create_auth_service().unwrap();
+        clean_up_sdk().unwrap();
+        create_auth_service().unwrap_err();
+    }
+
+    #[test]
+    fn invalid_init_param() {
+        let init_param = InitParam::new().web_domain(None);
+        let err = init_sdk(&init_param).unwrap_err();
         assert_eq!(
             &format!("{}", err),
-            r#"zoom_sdk::Error { type: Rust, message: "Only one Sdk can exist at a time" }"#
+            r#"zoom_sdk::Error { type: InvalidParameter, message: "Wrong parameter" }"#
         );
-        sdk1.clean_up().unwrap();
-        let sdk2 = InitParam::new().init_sdk().unwrap();
-        sdk2.create_auth_service().unwrap();
-        unsafe { sdk2.clean_up_internal().unwrap() };
-        sdk2.create_auth_service().unwrap_err();
-        // unsafe { sdk2.clean_up_internal() };
-        // sdk2.clean_up();
     }
 }
