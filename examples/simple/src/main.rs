@@ -4,7 +4,10 @@ use std::pin::Pin;
 use std::ptr;
 use std::rc::Rc;
 use winapi::um::libloaderapi::GetModuleHandleA;
-use zoom_sdk::auth::{AuthResult, AuthService, LoginStatus};
+use zoom_sdk::auth::{AuthResult, AuthService, AuthServiceEvent, LoginStatus};
+use zoom_sdk::meeting::{
+    MeetingService, MeetingServiceEvent, MeetingStatus, StatisticsWarningType,
+};
 
 fn main() {
     nwg::init().expect("Failed to init Native Windows GUI");
@@ -35,8 +38,11 @@ fn main() {
     let window = Rc::new(window);
     let events_window = window.clone();
 
-    // TODO: unfortunately, full_bind_event_handler requires static lifetime
-    let zoom_state = Rc::new(RefCell::new(ZoomState::default()));
+    // unfortunately, full_bind_event_handler requires static lifetime
+    let zoom_state = Rc::new(RefCell::new(ZoomState {
+        window: window.clone(),
+        services: None,
+    }));
 
     let handler = nwg::full_bind_event_handler(&window.handle, move |evt, _evt_data, handle| {
         use nwg::Event as E;
@@ -71,28 +77,41 @@ fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error
     zoom_sdk::init_sdk(&init_param).expect("Initialization failed");
     println!("Initialized");
     let mut state_borrow = state.borrow_mut();
-    state_borrow.meeting = Some(zoom_sdk::create_meeting_service()?);
-    state_borrow.auth = Some(zoom_sdk::create_auth_service()?);
-    let auth = state_borrow.auth.as_mut().unwrap();
+    state_borrow.services = Some(ZoomServices {
+        meeting: zoom_sdk::create_meeting_service()?,
+        auth: zoom_sdk::create_auth_service()?,
+    });
+    let meeting = &mut state_borrow.services.as_mut().unwrap().meeting;
+    meeting.set_event(Box::new(EventImpl {
+        state: state.clone(),
+    }))?;
+    let auth = &mut state_borrow.services.as_mut().unwrap().auth;
+    // TODO: reuse the same EventImpl box for meeting
     auth.set_event(Box::new(EventImpl {
         state: state.clone(),
     }))?;
-    auth.sdk_auth()?;
     println!("auth service created");
+    auth.sdk_auth()?;
     Ok(())
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ZoomState {
-    meeting: Option<zoom_sdk::meeting::MeetingService<'static>>,
-    auth: Option<Pin<Box<zoom_sdk::auth::AuthService<'static>>>>,
+    window: Rc<nwg::Window>,
+    services: Option<ZoomServices>,
+}
+
+#[derive(Debug)]
+struct ZoomServices {
+    meeting: Pin<Box<MeetingService<'static>>>,
+    auth: Pin<Box<AuthService<'static>>>,
 }
 
 struct EventImpl {
     state: Rc<RefCell<ZoomState>>,
 }
 
-impl zoom_sdk::auth::AuthServiceEvent for EventImpl {
+impl AuthServiceEvent for EventImpl {
     fn authentication_return(&self, auth: &AuthService, auth_result: AuthResult) {
         catch_error(|| {
             println!("AuthResult {:?}", auth_result);
@@ -111,11 +130,28 @@ impl zoom_sdk::auth::AuthServiceEvent for EventImpl {
                 println!("name {}", name);
                 let uri = std::env::var("ZOOM_URI")?;
                 let state = RefCell::borrow_mut(&self.state);
-                let meeting = state.meeting.as_ref().unwrap();
+                let meeting = &state.services.as_ref().unwrap().meeting;
                 meeting.handle_zoom_web_uri_protocol_action(&uri)?;
             }
             Ok(())
         });
+    }
+}
+
+impl MeetingServiceEvent for EventImpl {
+    fn meeting_status_changed(&self, _meeting: &MeetingService, status: MeetingStatus) {
+        println!("Meeting status {:?}", &status);
+        if let MeetingStatus::Ended(..) = status {
+            RefCell::borrow(&self.state).window.close();
+        }
+    }
+
+    fn meeting_statistics_warning_notification(
+        &self,
+        _meeting: &MeetingService,
+        typ: StatisticsWarningType,
+    ) {
+        println!("Meeting statistics warning {:?}", typ);
     }
 }
 
