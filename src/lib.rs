@@ -6,7 +6,7 @@
 //!
 //! ```
 //! fn main() -> Result<(), zoom_sdk_windows::error::Error> {
-//!     zoom_sdk_windows::init_sdk(zoom_sdk_windows::InitParam::new()?);
+//!     zoom_sdk_windows::init_sdk(&zoom_sdk_windows::InitParam::new())?;
 //!     Ok(())
 //! }
 //! ```
