@@ -457,4 +457,5 @@ version = "0.2.0"
 dependencies = [
  "bindgen",
  "cc",
+ "glue-generator",
 ]

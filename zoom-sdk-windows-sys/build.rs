@@ -2,6 +2,8 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
+    glue_generator::generate_glue();
+
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let out_file = out_path.join("bindings.rs");
     let bundled_bindings = "bundled/bindgen.rs";
@@ -24,9 +26,10 @@ fn main() {
 
     cc::Build::new()
         .cpp(true)
+        .include(env::current_dir().unwrap())
         .include(&format!("{}\\h", sdk_dir))
         .file("glue.cpp")
-        .file("generated.cpp")
+        .file(out_path.join("generated.cpp"))
         .compile("wrap.a");
 
     let bindings = bindgen::Builder::default()
@@ -34,6 +37,7 @@ fn main() {
         .clang_arg("c++")
         .clang_arg("-v")
         .clang_arg(&format!("-I{}\\h", sdk_dir))
+        .clang_arg(&format!("-I{}", out_path.to_string_lossy()))
         // TODO: Don't hard code these paths
         .clang_arg("-IC:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Tools/MSVC/14.28.29333/include")
         .clang_arg("-IC:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Tools/MSVC/14.27.29110/include")

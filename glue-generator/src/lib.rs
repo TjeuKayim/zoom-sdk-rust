@@ -5,20 +5,15 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-fn main() {
+pub fn generate_glue() {
     // cargo run --package glue-generator --bin glue-generator --target x86_64-pc-windows-msvc
     let clang = Clang::new().unwrap();
     let index = Index::new(&clang, false, true);
 
     let env_var = "ZOOM_SDK_DIR";
     let sdk_dir = env::var(env_var).expect("Environment variable ZOOM_SDK_DIR not set");
-    let mut header_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    header_path.push(r#"..\zoom-sdk-windows-sys\prelude.hpp"#);
-    dbg!(&header_path);
-    let header_path = header_path.canonicalize().unwrap();
-    dbg!(&header_path);
 
-    let tu = index.parser(&header_path)
+    let tu = index.parser("prelude.hpp")
         .arguments(&[
             "-x",
             "c++",
@@ -120,7 +115,7 @@ impl GlueGenerator {
         use std::fmt::Write;
 
         let class_name = class.get_name().unwrap();
-        println!("Visit class {}", class_name);
+        // println!("Visit class {}", class_name);
         let mut names_seen = Vec::with_capacity(children.len());
         // Event classes have extra glue generation
         lazy_static::lazy_static! {
@@ -175,8 +170,7 @@ impl GlueGenerator {
             let mut definition = signature.clone();
             write!(&mut signature, ");").unwrap();
             // declaration
-            let declaration = if let Some(comment) = member.get_comment() {
-                // TODO: enable this again, causes LexError
+            let declaration = if let Some(comment) = member.get_comment_brief() {
                 // let mut comment: String = comment
                 //     .lines()
                 //     .map(|l| format!("{}\r\n", l.trim_start()))
@@ -184,8 +178,7 @@ impl GlueGenerator {
                 // if !comment.ends_with("\r\n") {
                 //     comment.push_str("\r\n");
                 // }
-                let comment = String::new();
-                format!("{}{}", comment, signature)
+                format!("/// {}\r\n{}", comment, signature)
             } else {
                 signature
             };

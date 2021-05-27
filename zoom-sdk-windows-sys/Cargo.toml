@@ -10,19 +10,10 @@ documentation = "http://docs.rs/zoom-sdk-windows-sys/"
 readme = "README.md"
 categories = ["external-ffi-bindings"]
 keywords = ["zoom", "video", "conferencing"]
-include = [
-    ".cargo_vcs_info.json",
-    "build.rs",
-    "src/*.rs",
-    "glue.?pp",
-    "generated.?pp",
-    "prelude.hpp",
-    "wrapper.hpp",
-    "README.md",
-]
 
 [dependencies]
 
 [build-dependencies]
 bindgen = "0.56.0"
 cc = "1.0"
+glue-generator = { path = "../glue-generator" }
