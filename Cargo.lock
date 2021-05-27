@@ -433,8 +433,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "zoom-sdk"
+name = "zoom-sdk-example-simple"
 version = "0.1.0"
+dependencies = [
+ "embed-resource",
+ "native-windows-gui",
+ "winapi",
+ "zoom-sdk-windows",
+]
+
+[[package]]
+name = "zoom-sdk-windows"
+version = "0.2.0"
 dependencies = [
  "lazycell",
  "winapi",
@@ -442,18 +452,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zoom-sdk-example-simple"
-version = "0.1.0"
-dependencies = [
- "embed-resource",
- "native-windows-gui",
- "winapi",
- "zoom-sdk",
-]
-
-[[package]]
 name = "zoom-sdk-windows-sys"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bindgen",
  "cc",
