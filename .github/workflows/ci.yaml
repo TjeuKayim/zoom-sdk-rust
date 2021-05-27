@@ -9,6 +9,7 @@ jobs:
     env:
       ZOOM_SDK_DIR: 'C:\ZoomSdk'
       ZOOM_SDK_VERSION: 'v5.5.12511.0422'
+      LIBCLANG_PATH: 'C:\Program Files\LLVM\bin\'
     steps:
       - name: Cache SDK
         id: cache-sdk
