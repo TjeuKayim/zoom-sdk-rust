@@ -14,8 +14,8 @@ jobs:
         id: cache-sdk
         uses: actions/cache@v2
         with:
-          path: prime-numbers
-          key: zoom-sdk-${{ env.ZOOM_SDK_VERSION }}
+          path: ${{ env.ZOOM_SDK_DIR }}
+          key: zoom-sdk-windows-${{ env.ZOOM_SDK_VERSION }}
       - name: Download Zoom SDK
         if: steps.cache-sdk.outputs.cache-hit != 'true'
         env:
@@ -33,6 +33,7 @@ jobs:
           rm $tmpZip
           mv .\zoom-sdk-windows-5.5.12511.0422 $env:ZOOM_SDK_DIR
           ls $env:ZOOM_SDK_DIR
+          (Resolve-Path ${env:ZOOM_SDK_DIR}\bin).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
@@ -40,6 +41,7 @@ jobs:
           target: i686-pc-windows-msvc
       - name: Run glue generator
         run: |
+          choco install llvm
           $env:OUT_DIR = Resolve-Path .\zoom-sdk-windows-sys
           cargo run --target x86_64-pc-windows-msvc --manifest-path .\glue-generator\Cargo.toml
           $env:OUT_DIR = $null
