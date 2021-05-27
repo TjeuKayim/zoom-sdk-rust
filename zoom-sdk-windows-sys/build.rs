@@ -4,9 +4,10 @@ use std::path::PathBuf;
 fn main() {
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let out_file = out_path.join("bindings.rs");
+    let bundled_bindings = "bundled/bindgen.rs";
     if let Ok(_) = std::env::var("DOCS_RS") {
         // use bundled bindings because docs.rs can't run MSVC
-        std::fs::copy("bindgen_bundled.rs", out_file)
+        std::fs::copy(bundled_bindings, out_file)
             .expect("Could not copy bindings to output directory");
         return;
     }
@@ -52,6 +53,8 @@ fn main() {
 
     // Write the bindings to the $OUT_DIR/bindings.rs file.
     bindings
-        .write_to_file(out_file)
+        .write_to_file(&out_file)
         .expect("Couldn't write bindings!");
+
+    std::fs::copy(&out_file, bundled_bindings).unwrap();
 }
