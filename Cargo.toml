@@ -1,6 +1,6 @@
 [package]
-name = "zoom-sdk"
-version = "0.1.0"
+name = "zoom-sdk-windows"
+version = "0.2.0"
 authors = ["Tjeu Kayim <15987676+TjeuKayim@users.noreply.github.com>"]
 edition = "2018"
 license = "MIT"
