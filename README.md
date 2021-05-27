@@ -1,7 +1,7 @@
 # Zoom SDK Rust Wrapper
 
-[![Crate](https://img.shields.io/crates/v/zoom-sdk.svg)](https://crates.io/crates/zoom-sdk)
-[![API](https://docs.rs/zoom-sdk/badge.svg)](https://docs.rs/zoom-sdk)
+[![Crate](https://img.shields.io/crates/v/zoom-sdk-windows.svg)](https://crates.io/crates/zoom-sdk-windows)
+[![API](https://docs.rs/zoom-sdk-windows/badge.svg)](https://docs.rs/zoom-sdk-windows)
 
 Idiomatic Rust bindings to
 [Zoom Windows Software Development Kit](https://github.com/zoom/zoom-sdk-windows).
