@@ -64,7 +64,9 @@ fn main() {
         .write_to_file(&out_file)
         .expect("Couldn't write bindings!");
 
-    std::fs::copy(&out_file, bundled_bindings).unwrap();
+    if env::var("CP_BUNDLED_BINDINGS").map_or(false, |c| c == "1") {
+        std::fs::copy(&out_file, bundled_bindings).unwrap();
+    }
 }
 
 /// This function and the rest of this file generate glue code for virtual methods and constructors.
