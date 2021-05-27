@@ -5,8 +5,8 @@
 //! # Examples
 //!
 //! ```
-//! fn main() -> Result<(), zoom_sdk::error::Error> {
-//!     zoom_sdk::init_sdk(zoom_sdk::InitParam::new()?);
+//! fn main() -> Result<(), zoom_sdk_windows::error::Error> {
+//!     zoom_sdk_windows::init_sdk(zoom_sdk_windows::InitParam::new()?);
 //!     Ok(())
 //! }
 //! ```
@@ -282,7 +282,7 @@ mod tests {
         let err = init_sdk(&init_param).unwrap_err();
         assert_eq!(
             &format!("{}", err),
-            r#"zoom_sdk::Error { type: InvalidParameter, message: "Wrong parameter" }"#
+            r#"zoom_sdk_windows::Error { type: InvalidParameter, message: "Wrong parameter" }"#
         );
     }
 }
