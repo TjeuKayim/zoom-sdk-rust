@@ -11,10 +11,16 @@ jobs:
     steps:
       - name: Download Zoom SDK
         env:
-          ZOOM_SDK_DOWNLOAD: ${{ secrets.ZOOM_SDK_DOWNLOAD }}
+          zoom_marketplace_auth_id: ${{ secrets.ZOOM_MARKETPLACE_AUTH_ID }}
+          zoom_marketplace_app_id: ${{ secrets.ZOOM_MARKETPLACE_APP_ID }}
         run: |
           $tmpZip = ".\sdk.zip"
-          Invoke-WebRequest -Uri $env:ZOOM_SDK_DOWNLOAD -OutFile $tmpZip
+          $headers = @{'X-Auth-Token' = $env:zoom_marketplace_auth_id}
+          $appId = $env:zoom_marketplace_app_id
+          $version = 'v5.5.12511.0422'
+          $downloadSdkResponse = Invoke-WebRequest -Uri "https://marketplace.zoom.us/api/v1/apps/${appId}/downloadSdk?title=Windows&type=3&version=${version}" -H $headers
+          $downloadSdkResponse = $downloadSdkResponse.Content | ConvertFrom-Json
+          Invoke-WebRequest -Uri $downloadSdkResponse.downloadLink -OutFile $tmpZip
           $tmpZip | Expand-Archive -DestinationPath .\
           rm $tmpZip
           mv .\zoom-sdk-windows-5.5.12511.0422 $env:ZOOM_SDK_DIR
