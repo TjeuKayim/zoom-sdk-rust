@@ -22,7 +22,7 @@ mod tests {
     #[test]
     fn zoom_get_version() {
         unsafe {
-            let version = ZOOMSDK_GetVersion();
+            let version = ZOOMSDK_GetSDKVersion();
             let version = u16_ptr_to_string(version);
             dbg!(version);
         }

@@ -18,11 +18,14 @@ fn main() {
     println!("cargo:rerun-if-changed=wrapper.hpp");
     println!("cargo:rerun-if-changed=glue.hpp");
     println!("cargo:rerun-if-changed=glue.cpp");
+    println!("cargo:rerun-if-changed=generated.cpp");
+    println!("cargo:rerun-if-changed=generated.cpp");
 
     cc::Build::new()
         .cpp(true)
         .include(&format!("{}\\h", sdk_dir))
         .file("glue.cpp")
+        .file("generated.cpp")
         .compile("wrap.a");
 
     let bindings = bindgen::Builder::default()
@@ -39,6 +42,9 @@ fn main() {
         .whitelist_function("ZOOMSDK.*")
         .whitelist_type("ZOOMSDK.*")
         .whitelist_var("ZOOMSDK.*")
+        .whitelist_function("ZoomGlue.*")
+        .whitelist_type("ZoomGlue.*")
+        .whitelist_var("ZoomGlue.*")
         .header("wrapper.hpp")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .generate()

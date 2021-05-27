@@ -1,33 +1,30 @@
-use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, Sdk, ZoomResult};
-use std::ffi::c_void;
-use std::marker::PhantomData;
+use crate::{ffi, str_to_u16_vec, u16_to_string, Error, ErrorExt, ZoomResult};
+use std::marker::{PhantomData, PhantomPinned};
 use std::panic::catch_unwind;
+use std::pin::Pin;
 use std::ptr::NonNull;
-use std::{fmt, ptr};
+use std::{fmt, mem, ptr};
 
 /// Authentication Service
+#[derive(Debug)]
 pub struct AuthService<'a> {
     // This struct is not supposed to be Send nor Sync
     inner: NonNull<ffi::ZOOMSDK_IAuthService>,
-    data: Data<'a>,
+    event_data: Option<EventObject<'a>>,
+    _marker: PhantomPinned,
 }
 
-enum Data<'a> {
-    Boxed {
-        events: Option<Box<AuthService<'a>>>,
-    },
-    Inline {
-        #[allow(dead_code)]
-        events: AuthServiceEvent<'a>,
-    },
+/// C++ sees this as class that inherits from IAuthServiceEvent
+#[repr(C)]
+pub struct EventObject<'a> {
+    base: ffi::ZoomGlue_AuthServiceEvent,
+    service: NonNull<AuthService<'a>>,
+    events: Box<dyn AuthServiceEvent + 'a>,
 }
 
-pub struct AuthServiceEvent<'a> {
-    // TODO: Use generic type param instead of dyn here
-    //       or make this a trait.
-    // TODO: How to handle errors?
-    pub authentication_return: Box<dyn Fn(&AuthService, AuthResult) + 'a>,
-    pub login_return: Box<dyn Fn(&AuthService, LoginStatus) + 'a>,
+pub trait AuthServiceEvent {
+    fn authentication_return(&self, _auth: &AuthService, _auth_result: AuthResult) {}
+    fn login_return(&self, _auth: &AuthService, _login_status: LoginStatus) {}
 }
 
 impl Drop for AuthService<'_> {
@@ -38,21 +35,22 @@ impl Drop for AuthService<'_> {
     }
 }
 
-impl fmt::Debug for AuthServiceEvent<'_> {
+impl fmt::Debug for EventObject<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::AuthServiceEvent").finish()
+        f.debug_struct("zoom_sdk::EventObject").finish()
     }
 }
 
 impl<'a> AuthService<'a> {
-    pub(crate) fn new() -> ZoomResult<Self> {
+    pub(crate) fn new() -> ZoomResult<Pin<Box<Self>>> {
         let mut service = ptr::null_mut();
         unsafe { ffi::ZOOMSDK_CreateAuthService(&mut service) }.err_wrap(true)?;
         if let Some(inner) = NonNull::new(service) {
-            Ok(AuthService {
+            Ok(Box::pin(AuthService {
                 inner,
-                data: Data::Boxed { events: None },
-            })
+                event_data: None,
+                _marker: PhantomPinned,
+            }))
         } else {
             Err(Error::new_rust("ZOOMSDK_CreateAuthService returned null"))
         }
@@ -63,11 +61,11 @@ impl<'a> AuthService<'a> {
         let app_key = str_to_u16_vec(&app_key);
         let app_secret = std::env::var("ZOOM_SDK_SECRET").unwrap();
         let app_secret = str_to_u16_vec(&app_secret);
-        let param = ffi::ZOOMSDK_AuthParam {
+        let mut param = ffi::ZOOMSDK_AuthParam {
             appKey: &app_key[0],
             appSecret: &app_secret[0],
         };
-        unsafe { ffi::ZOOMSDK_IAuthService_SDKAuthParam(self.inner.as_ptr(), param) }
+        unsafe { ffi::ZoomGlue_IAuthService_SDKAuth(self.inner.as_ptr(), &mut param) }
             .err_wrap(true)?;
         Ok(())
     }
@@ -75,7 +73,7 @@ impl<'a> AuthService<'a> {
     pub fn login(&self, username: &str, password: &str, remember_me: bool) -> ZoomResult<()> {
         let username = str_to_u16_vec(username);
         let password = str_to_u16_vec(password);
-        let param = ffi::ZOOMSDK_LoginParam {
+        let mut param = ffi::ZOOMSDK_LoginParam {
             loginType: ffi::ZOOMSDK_LoginType_LoginType_Email,
             ut: ffi::ZOOMSDK_tagLoginParam__bindgen_ty_1 {
                 emailLogin: ffi::ZOOMSDK_tagLoginParam4Email {
@@ -85,34 +83,36 @@ impl<'a> AuthService<'a> {
                 },
             },
         };
-        unsafe { ffi::ZOOMSDK_IAuthService_Login(self.inner.as_ptr(), param) }.err_wrap(true)?;
+        unsafe { ffi::ZoomGlue_IAuthService_Login(self.inner.as_ptr(), &mut param) }
+            .err_wrap(true)?;
         Ok(())
     }
 
-    pub fn set_event(&mut self, events: AuthServiceEvent<'a>) -> ZoomResult<()> {
-        let callback_data = match &mut self.data {
-            Data::Inline { events: e } => {
-                *e = events;
-                self as *mut AuthService
-            }
-            Data::Boxed { events: e } => {
-                let mut b = Box::new(AuthService {
-                    inner: self.inner,
-                    data: Data::Inline { events },
-                });
-                let p = &mut *b as *mut AuthService;
-                *e = Some(b);
-                p
-            }
-        };
-        let c_event = ffi::ZOOMSDK_CAuthServiceEvent {
-            callbackData: callback_data as _,
-            authenticationReturn: Some(on_authentication_return),
-            loginReturn: Some(on_login_return),
-        };
+    pub fn set_event(
+        self: &mut Pin<Box<Self>>,
+        events: Box<dyn AuthServiceEvent + 'a>,
+    ) -> ZoomResult<()> {
+        // Pinned because the self-referencing struct and a pointer passed to C++.
         unsafe {
-            ffi::ZOOMSDK_IAuthService_SetEvent(self.inner.as_ptr(), &c_event).err_wrap(true)?
-        };
+            let service = Pin::get_unchecked_mut(self.as_mut());
+            let service_p = NonNull::from(service as &AuthService);
+            let data = EventObject {
+                base: mem::zeroed(),
+                service: service_p,
+                events,
+            };
+            service.event_data = Some(data);
+            let object_base = &mut service.event_data.as_mut().unwrap().base;
+            ffi::ZoomGlue_AuthServiceEvent_PlacementNew(object_base);
+            object_base.cbAuthenticationReturn = Some(on_authentication_return);
+            object_base.cbLoginRet = Some(on_login_return);
+            // safe cast because of inheritance
+            let interface_p = object_base as *mut ffi::ZoomGlue_AuthServiceEvent
+                as *mut ffi::ZOOMSDK_IAuthServiceEvent;
+            ffi::ZoomGlue_IAuthService_SetEvent(service.inner.as_ptr(), interface_p)
+                .err_wrap(true)?;
+        }
+
         Ok(())
     }
 }
@@ -132,7 +132,7 @@ pub enum AuthResult {
     /// Unknown error.
     Unknown,
     /// Service is busy.
-    ServiceBuzy,
+    ServiceBusy,
     /// Initial status.
     None,
     /// Time out.
@@ -159,7 +159,7 @@ fn map_auth_result(result: i32) -> AuthResult {
         ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTSUPPORT => AuthResult::AccountNotSupport,
         ffi::ZOOMSDK_AuthResult_AUTHRET_ACCOUNTNOTENABLESDK => AuthResult::AccountNotEnableSdk,
         ffi::ZOOMSDK_AuthResult_AUTHRET_UNKNOWN => AuthResult::Unknown,
-        ffi::ZOOMSDK_AuthResult_AUTHRET_SERVICE_BUSY => AuthResult::ServiceBuzy,
+        ffi::ZOOMSDK_AuthResult_AUTHRET_SERVICE_BUSY => AuthResult::ServiceBusy,
         ffi::ZOOMSDK_AuthResult_AUTHRET_NONE => AuthResult::None,
         ffi::ZOOMSDK_AuthResult_AUTHRET_OVERTIME => AuthResult::OverTime,
         ffi::ZOOMSDK_AuthResult_AUTHRET_NETWORKISSUE => AuthResult::NetworkIssue,
@@ -176,7 +176,7 @@ fn map_auth_result_description(result: AuthResult) -> &'static str {
         AuthResult::AccountNotSupport => "The user account does not support",
         AuthResult::AccountNotEnableSdk => "The user account is not enabled for SDK",
         AuthResult::Unknown => "Unknown error",
-        AuthResult::ServiceBuzy => "Service is busy",
+        AuthResult::ServiceBusy => "Service is busy",
         AuthResult::None => "Initial status",
         AuthResult::OverTime => "Time out",
         AuthResult::NetworkIssue => "Network issues",
@@ -199,11 +199,16 @@ pub enum LoginStatus<'a> {
     Unmapped(i32),
 }
 
-#[derive(Debug)]
 pub struct AccountInfo<'a> {
     raw: NonNull<ffi::ZOOMSDK_IAccountInfo>,
     // IAccountInfo should not be dropped apparently, but is only valid for in the callback
     phantom: PhantomData<&'a AuthService<'a>>,
+}
+
+impl fmt::Debug for AccountInfo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AccountInfo").field(&self.raw).finish()
+    }
 }
 
 impl<'a> AccountInfo<'a> {
@@ -215,53 +220,54 @@ impl<'a> AccountInfo<'a> {
     }
 
     pub fn get_display_name(&self) -> String {
-        unsafe { u16_to_string(ffi::ZOOMSDK_IAccountInfo_GetDisplayName(self.raw.as_ptr())) }
+        unsafe { u16_to_string(ffi::ZoomGlue_IAccountInfo_GetDisplayName(self.raw.as_ptr())) }
     }
     // TODO: GetLoginType
 }
 
-unsafe extern "C" fn on_authentication_return(data: *mut c_void, res: ffi::ZOOMSDK_AuthResult) {
+unsafe extern "C" fn on_authentication_return(
+    data: *mut ffi::ZOOMSDK_IAuthServiceEvent,
+    res: ffi::ZOOMSDK_AuthResult,
+) {
     let _ = catch_unwind(|| {
-        let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &service.data {
-            (events.authentication_return)(service, map_auth_result(res));
-        }
+        events_callback(data, |events, service| {
+            events.authentication_return(service, map_auth_result(res));
+        });
     });
-    // if res == ffi::ZOOMSDK_SDKError_SDKERR_SUCCESS {
-    //     let mut meeting_service = ptr::null_mut();
-    //     let err = ffi::ZOOMSDK_CreateMeetingService(&mut meeting_service);
-    //     dbg!(err);
-    //
-    //     invoke_init_status_callback("SDK Authenticated");
-    // } else {
-    //     invoke_init_status_callback("SDK Authentication failed");
-    // }
 }
 
 unsafe extern "C" fn on_login_return(
-    data: *mut c_void,
+    this: *mut ffi::ZOOMSDK_IAuthServiceEvent,
     ret: ffi::ZOOMSDK_LOGINSTATUS,
     info: *mut ffi::ZOOMSDK_IAccountInfo,
 ) {
     let lifetime = ();
     let _ = catch_unwind(|| {
-        let status = match ret {
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS => {
-                LoginStatus::Success(AccountInfo::new(info, &lifetime))
-            }
-            ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
-            _ => LoginStatus::Unmapped(ret),
-        };
-        let service = &mut *(data as *mut AuthService);
-        if let Data::Inline { events } = &service.data {
-            (events.login_return)(service, status);
-        }
+        events_callback(this, |events, service| {
+            let status = match ret {
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_IDLE => LoginStatus::Idle,
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_PROCESSING => LoginStatus::Processing,
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS => {
+                    LoginStatus::Success(AccountInfo::new(info, &lifetime))
+                }
+                ffi::ZOOMSDK_LOGINSTATUS_LOGIN_FAILED => LoginStatus::Failed,
+                _ => LoginStatus::Unmapped(ret),
+            };
+            events.login_return(service, status);
+        });
     });
-    // dbg!(ret);
-    // if ret == ffi::ZOOMSDK_LOGINSTATUS_LOGIN_SUCCESS {
-    //     invoke_init_status_callback("Logged in");
-    //     let display_name = ffi::ZOOMSDK_IAccountInfo_GetDisplayName(info);
-    //     dbg!(u16_ptr_to_os_string(display_name));
+}
+
+unsafe fn events_callback(
+    this: *mut ffi::ZOOMSDK_IAuthServiceEvent,
+    mut f: impl FnMut(&mut Box<dyn AuthServiceEvent>, &mut AuthService),
+) {
+    let service = (*(this as *mut EventObject)).service.as_mut();
+    let mut tmp_data = None;
+    // callback may not call set_event, as that would mutate the running closure
+    // so temporary swap event data.
+    mem::swap(&mut service.event_data, &mut tmp_data);
+    let events = &mut tmp_data.as_mut().unwrap().events;
+    f(events, service);
+    mem::swap(&mut service.event_data, &mut tmp_data);
 }

@@ -1,0 +1,55 @@
+on: [pull_request, push]
+
+name: CI
+
+jobs:
+  build_and_test:
+    name: Build and test
+    runs-on: windows-latest
+    env:
+      ZOOM_SDK_DIR: 'C:\ZoomSdk'
+      ZOOM_SDK_VERSION: 'v5.5.12511.0422'
+      LIBCLANG_PATH: 'C:\Program Files\LLVM\bin\'
+    steps:
+      - name: Cache SDK
+        id: cache-sdk
+        uses: actions/cache@v2
+        with:
+          path: |
+            ${{ env.ZOOM_SDK_DIR }}
+            C:\Program Files\LLVM
+          key: dependencies-zoom-sdk-windows-${{ env.ZOOM_SDK_VERSION }}
+      - name: Download Zoom SDK & LLVM
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
+        env:
+          zoom_marketplace_auth_id: ${{ secrets.ZOOM_MARKETPLACE_AUTH_ID }}
+          zoom_marketplace_app_id: ${{ secrets.ZOOM_MARKETPLACE_APP_ID }}
+        run: |
+          $tmpZip = ".\sdk.zip"
+          $headers = @{'X-Auth-Token' = $env:zoom_marketplace_auth_id}
+          $appId = $env:zoom_marketplace_app_id
+          $version = $env:ZOOM_SDK_VERSION
+          $downloadSdkResponse = Invoke-WebRequest -Uri "https://marketplace.zoom.us/api/v1/apps/${appId}/downloadSdk?title=Windows&type=3&version=${version}" -H $headers
+          $downloadSdkResponse = $downloadSdkResponse.Content | ConvertFrom-Json
+          Invoke-WebRequest -Uri $downloadSdkResponse.downloadLink -OutFile $tmpZip
+          $tmpZip | Expand-Archive -DestinationPath .\
+          rm $tmpZip
+          mv .\zoom-sdk-windows-5.5.12511.0422 $env:ZOOM_SDK_DIR
+          ls $env:ZOOM_SDK_DIR
+          (Resolve-Path ${env:ZOOM_SDK_DIR}\bin).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install llvm
+          'C:\Program Files\LLVM\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: i686-pc-windows-msvc
+      - name: Run glue generator
+        run: |
+          $env:OUT_DIR = Resolve-Path .\zoom-sdk-windows-sys
+          cargo run --target x86_64-pc-windows-msvc --manifest-path .\glue-generator\Cargo.toml
+          $env:OUT_DIR = $null
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -- --test-threads=1

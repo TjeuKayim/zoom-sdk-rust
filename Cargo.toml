@@ -1,6 +1,6 @@
 [package]
-name = "zoom-sdk"
-version = "0.1.0"
+name = "zoom-sdk-windows"
+version = "0.2.0"
 authors = ["Tjeu Kayim <15987676+TjeuKayim@users.noreply.github.com>"]
 edition = "2018"
 license = "MIT"
@@ -15,10 +15,12 @@ keywords = ["zoom", "video", "conferencing"]
 members = [
     "zoom-sdk-windows-sys",
     "examples/simple",
+    "glue-generator",
 ]
 
 [dependencies]
 winapi = { version = "0.3.9", features = ["std"] }
+lazycell = "1.3"
 
 [dependencies.zoom-sdk-windows-sys]
 path = "zoom-sdk-windows-sys"
