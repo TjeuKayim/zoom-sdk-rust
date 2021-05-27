@@ -6,7 +6,7 @@ fn main() {
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     let out_file = out_path.join("bindings.rs");
-    let bundled_bindings = "bundled/bindgen.rs";
+    let bundled_bindings = "bundled-bindgen.rs";
     if let Ok(_) = std::env::var("DOCS_RS") {
         // use bundled bindings because docs.rs can't run MSVC
         std::fs::copy(bundled_bindings, out_file)

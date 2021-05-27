@@ -4,5 +4,5 @@ bin/
 .vscode
 .idea
 
-bundled/
+bundled*
 generated*
