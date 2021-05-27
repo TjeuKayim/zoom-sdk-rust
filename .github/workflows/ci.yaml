@@ -18,10 +18,12 @@ jobs:
           $tmpZip | Expand-Archive -DestinationPath .\
           rm $tmpZip
           mv .\zoom-sdk-windows-5.5.12511.0422 $env:ZOOM_SDK_DIR
+          ls $env:ZOOM_SDK_DIR
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          target: i686-pc-windows-msvc
       - uses: actions-rs/cargo@v1
         with:
           command: build
