@@ -42,6 +42,7 @@ jobs:
       - name: Run glue generator
         run: |
           choco install llvm
+          refreshenv
           $env:OUT_DIR = Resolve-Path .\zoom-sdk-windows-sys
           cargo run --target x86_64-pc-windows-msvc --manifest-path .\glue-generator\Cargo.toml
           $env:OUT_DIR = $null
