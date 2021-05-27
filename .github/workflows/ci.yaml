@@ -8,8 +8,16 @@ jobs:
     runs-on: windows-latest
     env:
       ZOOM_SDK_DIR: 'C:\ZoomSdk'
+      ZOOM_SDK_VERSION: 'v5.5.12511.0422'
     steps:
+      - name: Cache SDK
+        id: cache-sdk
+        uses: actions/cache@v2
+        with:
+          path: prime-numbers
+          key: zoom-sdk-${{ env.ZOOM_SDK_VERSION }}
       - name: Download Zoom SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         env:
           zoom_marketplace_auth_id: ${{ secrets.ZOOM_MARKETPLACE_AUTH_ID }}
           zoom_marketplace_app_id: ${{ secrets.ZOOM_MARKETPLACE_APP_ID }}
@@ -17,7 +25,7 @@ jobs:
           $tmpZip = ".\sdk.zip"
           $headers = @{'X-Auth-Token' = $env:zoom_marketplace_auth_id}
           $appId = $env:zoom_marketplace_app_id
-          $version = 'v5.5.12511.0422'
+          $version = $env:ZOOM_SDK_VERSION
           $downloadSdkResponse = Invoke-WebRequest -Uri "https://marketplace.zoom.us/api/v1/apps/${appId}/downloadSdk?title=Windows&type=3&version=${version}" -H $headers
           $downloadSdkResponse = $downloadSdkResponse.Content | ConvertFrom-Json
           Invoke-WebRequest -Uri $downloadSdkResponse.downloadLink -OutFile $tmpZip
@@ -30,10 +38,11 @@ jobs:
         with:
           toolchain: stable
           target: i686-pc-windows-msvc
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+      - name: Run glue generator
+        run: |
+          $env:OUT_DIR = Resolve-Path .\zoom-sdk-windows-sys
+          cargo run --target x86_64-pc-windows-msvc --manifest-path .\glue-generator\Cargo.toml
+          $env:OUT_DIR = $null
       - uses: actions-rs/cargo@v1
         with:
           command: test
