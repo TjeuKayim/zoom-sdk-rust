@@ -9,17 +9,19 @@ jobs:
     env:
       ZOOM_SDK_DIR: 'C:\ZoomSdk'
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
       - name: Download Zoom SDK
+        env:
+          ZOOM_SDK_DOWNLOAD: ${{ secrets.ZOOM_SDK_DOWNLOAD }}
         run: |
           $tmpZip = ".\sdk.zip"
           Invoke-WebRequest -Uri $env:ZOOM_SDK_DOWNLOAD -OutFile $tmpZip
           $tmpZip | Expand-Archive -DestinationPath .\
           rm $tmpZip
           mv .\zoom-sdk-windows-5.5.12511.0422 $env:ZOOM_SDK_DIR
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
       - uses: actions-rs/cargo@v1
         with:
           command: build
