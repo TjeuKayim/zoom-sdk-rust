@@ -24,7 +24,7 @@ fn main() {
 
     nwg::Label::builder()
         .parent(&window)
-        .text("Starting...")
+        .text("Example")
         .build(&mut log_label)
         .unwrap();
 
@@ -54,7 +54,6 @@ fn main() {
                 }
             }
             E::OnInit => {
-                println!("OnInit");
                 catch_error(|| join_meeting(&zoom_state));
             }
             _ => {}
@@ -75,7 +74,7 @@ fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error
         .enable_log_by_default(true)
         .enable_generate_dump(true);
     zoom_sdk::init_sdk(&init_param).expect("Initialization failed");
-    println!("Initialized");
+    println!("Zoom initialized");
     let mut state_borrow = state.borrow_mut();
     state_borrow.services = Some(ZoomServices {
         meeting: zoom_sdk::create_meeting_service()?,
@@ -90,7 +89,7 @@ fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error
     auth.set_event(Box::new(EventImpl {
         state: state.clone(),
     }))?;
-    println!("auth service created");
+    println!("Zoom services created");
     auth.sdk_auth()?;
     Ok(())
 }
@@ -124,10 +123,10 @@ impl AuthServiceEvent for EventImpl {
 
     fn login_return(&self, _auth: &AuthService, login_status: LoginStatus) {
         catch_error(|| {
-            println!("login status {:?}", login_status);
+            println!("LoginStatus {:?}", login_status);
             if let zoom_sdk::auth::LoginStatus::Success(info) = login_status {
                 let name = info.get_display_name();
-                println!("name {}", name);
+                println!("Logged with name {}", name);
                 let uri = std::env::var("ZOOM_URI")?;
                 let state = RefCell::borrow_mut(&self.state);
                 let meeting = &state.services.as_ref().unwrap().meeting;

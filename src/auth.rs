@@ -199,11 +199,16 @@ pub enum LoginStatus<'a> {
     Unmapped(i32),
 }
 
-#[derive(Debug)]
 pub struct AccountInfo<'a> {
     raw: NonNull<ffi::ZOOMSDK_IAccountInfo>,
     // IAccountInfo should not be dropped apparently, but is only valid for in the callback
     phantom: PhantomData<&'a AuthService<'a>>,
+}
+
+impl fmt::Debug for AccountInfo<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("AccountInfo").field(&self.raw).finish()
+    }
 }
 
 impl<'a> AccountInfo<'a> {
