@@ -159,3 +159,11 @@ fn catch_error(f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {
         eprintln!("{0}, detail {0:?}", &e);
     });
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn dummy() {
+        assert_eq!(2, 1 + 1);
+    }
+}
