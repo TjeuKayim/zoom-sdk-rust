@@ -33,7 +33,7 @@ pub trait MeetingServiceEvent {
 
 impl fmt::Debug for EventObject<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::EventObject").finish()
+        f.debug_struct("zoom_sdk_windows::EventObject").finish()
     }
 }
 
@@ -47,7 +47,7 @@ impl Drop for MeetingService<'_> {
 
 impl fmt::Debug for MeetingService<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::MeetingService").finish()
+        f.debug_struct("zoom_sdk_windows::MeetingService").finish()
     }
 }
 

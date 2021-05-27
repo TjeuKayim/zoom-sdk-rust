@@ -44,12 +44,22 @@ jobs:
         with:
           toolchain: stable
           target: i686-pc-windows-msvc
-      - name: Run glue generator
-        run: |
-          $env:OUT_DIR = Resolve-Path .\zoom-sdk-windows-sys
-          cargo run --target x86_64-pc-windows-msvc --manifest-path .\glue-generator\Cargo.toml
-          $env:OUT_DIR = $null
       - uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -- --test-threads=1
+          args: >
+            --workspace -- --test-threads=1
+            --skip bindgen_test_layout_ZOOMSDK_CustomizedH323Device
+            --skip __bindgen_test_layout_std_basic_string
+      # Zoom only supports 32 bit, so running doc tests requires unstable flag for cross-compiling
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: >
+            --doc --workspace -Zdoctest-xcompile -- --test-threads=1

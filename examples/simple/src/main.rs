@@ -4,8 +4,8 @@ use std::pin::Pin;
 use std::ptr;
 use std::rc::Rc;
 use winapi::um::libloaderapi::GetModuleHandleA;
-use zoom_sdk::auth::{AuthResult, AuthService, AuthServiceEvent, LoginStatus};
-use zoom_sdk::meeting::{
+use zoom_sdk_windows::auth::{AuthResult, AuthService, AuthServiceEvent, LoginStatus};
+use zoom_sdk_windows::meeting::{
     MeetingService, MeetingServiceEvent, MeetingStatus, StatisticsWarningType,
 };
 
@@ -65,20 +65,20 @@ fn main() {
 }
 
 fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error::Error>> {
-    let init_param = zoom_sdk::InitParam::new()
+    let init_param = zoom_sdk_windows::InitParam::new()
         .branding_name(Some("RustWrapper")) // working
         .res_instance(unsafe { GetModuleHandleA(ptr::null()) })
         .ui_window_icon_big_id(2734) // working
         .ui_window_icon_small_id(2734)
-        .em_language_id(zoom_sdk::SdkLanguageId::English) // working
+        .em_language_id(zoom_sdk_windows::SdkLanguageId::English) // working
         .enable_log_by_default(true)
         .enable_generate_dump(true);
-    zoom_sdk::init_sdk(&init_param).expect("Initialization failed");
+    zoom_sdk_windows::init_sdk(&init_param).expect("Initialization failed");
     println!("Zoom initialized");
     let mut state_borrow = state.borrow_mut();
     state_borrow.services = Some(ZoomServices {
-        meeting: zoom_sdk::create_meeting_service()?,
-        auth: zoom_sdk::create_auth_service()?,
+        meeting: zoom_sdk_windows::create_meeting_service()?,
+        auth: zoom_sdk_windows::create_auth_service()?,
     });
     let meeting = &mut state_borrow.services.as_mut().unwrap().meeting;
     meeting.set_event(Box::new(EventImpl {
@@ -124,7 +124,7 @@ impl AuthServiceEvent for EventImpl {
     fn login_return(&self, _auth: &AuthService, login_status: LoginStatus) {
         catch_error(|| {
             println!("LoginStatus {:?}", login_status);
-            if let zoom_sdk::auth::LoginStatus::Success(info) = login_status {
+            if let zoom_sdk_windows::auth::LoginStatus::Success(info) = login_status {
                 let name = info.get_display_name();
                 println!("Logged with name {}", name);
                 let uri = std::env::var("ZOOM_URI")?;
@@ -158,4 +158,12 @@ fn catch_error(f: impl FnOnce() -> Result<(), Box<dyn std::error::Error>>) {
     f().unwrap_or_else(|e| {
         eprintln!("{0}, detail {0:?}", &e);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn dummy() {
+        assert_eq!(2, 1 + 1);
+    }
 }

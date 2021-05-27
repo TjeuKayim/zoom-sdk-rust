@@ -15,7 +15,7 @@ impl std::error::Error for Error {}
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut s = f.debug_struct("zoom_sdk::Error");
+        let mut s = f.debug_struct("zoom_sdk_windows::Error");
         s.field("type", &self.err_type)
             .field("message", &self.message);
         if let Some(detail) = &self.detail {

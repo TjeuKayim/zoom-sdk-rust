@@ -37,7 +37,7 @@ impl Drop for AuthService<'_> {
 
 impl fmt::Debug for EventObject<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("zoom_sdk::EventObject").finish()
+        f.debug_struct("zoom_sdk_windows::EventObject").finish()
     }
 }
 
