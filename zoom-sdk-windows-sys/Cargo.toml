@@ -16,4 +16,6 @@ keywords = ["zoom", "video", "conferencing"]
 [build-dependencies]
 bindgen = "0.56.0"
 cc = "1.0"
-glue-generator = { path = "../glue-generator" }
+clang = { version = "1.0.3", features = ["clang_10_0", "runtime"] }
+regex = "1.5"
+lazy_static = "1.4"
