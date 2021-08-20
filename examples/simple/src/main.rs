@@ -14,6 +14,7 @@ fn main() {
     nwg::Font::set_global_family("Segoe UI").expect("Failed to set default font");
     let mut window = Default::default();
     let mut log_label = Default::default();
+    let mut minimize_btn = Default::default();
     let layout = Default::default();
 
     nwg::Window::builder()
@@ -28,10 +29,17 @@ fn main() {
         .build(&mut log_label)
         .unwrap();
 
+    nwg::Button::builder()
+        .parent(&window)
+        .text("Minimize")
+        .build(&mut minimize_btn)
+        .unwrap();
+
     nwg::GridLayout::builder()
         .parent(&window)
         .spacing(1)
         .child_item(nwg::GridLayoutItem::new(&log_label, 0, 1, 1, 2))
+        .child_item(nwg::GridLayoutItem::new(&minimize_btn, 0, 2, 1, 2))
         .build(&layout)
         .unwrap();
 
@@ -41,6 +49,7 @@ fn main() {
     // unfortunately, full_bind_event_handler requires static lifetime
     let zoom_state = Rc::new(RefCell::new(ZoomState {
         window: window.clone(),
+        minimize_toggle: 0,
         services: None,
     }));
 
@@ -55,6 +64,24 @@ fn main() {
             }
             E::OnInit => {
                 catch_error(|| join_meeting(&zoom_state));
+            }
+            E::OnButtonClick => {
+                if &handle == &minimize_btn {
+                    let mut state = zoom_state.borrow_mut();
+                    let controller = state
+                        .services
+                        .as_ref()
+                        .unwrap()
+                        .meeting
+                        .get_ui_controller()
+                        .unwrap();
+
+                    state.minimize_toggle += 1;
+                    let float = state.minimize_toggle % 4;
+                    let minimize = (state.minimize_toggle / 4) % 4;
+                    controller.dbg_change_float(dbg!(float)); // second view switches to minimize tab
+                    controller.dbg_switch_minimize(dbg!(minimize));
+                }
             }
             _ => {}
         }
@@ -97,6 +124,7 @@ fn join_meeting(state: &Rc<RefCell<ZoomState>>) -> Result<(), Box<dyn std::error
 #[derive(Default)]
 struct ZoomState {
     window: Rc<nwg::Window>,
+    minimize_toggle: i32,
     services: Option<ZoomServices>,
 }
 

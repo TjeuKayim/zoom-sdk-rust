@@ -1,4 +1,4 @@
-use crate::{ffi, str_to_u16_vec, Error, ErrorExt, ZoomResult};
+use crate::{ffi, meeting_ui::MeetingUiController, str_to_u16_vec, Error, ErrorExt, ZoomResult};
 use std::marker::PhantomPinned;
 use std::panic::catch_unwind;
 use std::pin::Pin;
@@ -105,6 +105,13 @@ impl<'a> MeetingService<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn get_ui_controller(&self) -> Option<MeetingUiController<'a>> {
+        unsafe {
+            let ui_controller = ffi::ZoomGlue_IMeetingService_GetUIController(self.inner.as_ptr());
+            NonNull::new(ui_controller).map(MeetingUiController::new)
+        }
     }
 }
 

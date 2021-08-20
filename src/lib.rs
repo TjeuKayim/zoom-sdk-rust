@@ -20,6 +20,7 @@ use zoom_sdk_windows_sys as ffi;
 pub mod auth;
 pub mod error;
 pub mod meeting;
+pub mod meeting_ui;
 
 use auth::AuthService;
 use error::{Error, ErrorExt, ZoomResult};
